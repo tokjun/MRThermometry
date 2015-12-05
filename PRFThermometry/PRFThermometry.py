@@ -133,7 +133,7 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     self.alphaSpinBox.setMaximum(100.0)
     self.alphaSpinBox.setMinimum(-100.0)
     self.alphaSpinBox.setDecimals(8)
-    self.alphaSpinBox.setValue(0.01)
+    self.alphaSpinBox.setValue(-0.01)
     self.alphaSpinBox.setToolTip("Temperature coefficient (ppm/deg C)")
     parametersFormLayout.addRow("alpha: ", self.alphaSpinBox)
 
@@ -146,7 +146,7 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     self.gammaSpinBox.setMinimum(-100.0)
     self.gammaSpinBox.setDecimals(8)
     self.gammaSpinBox.setValue(42.576)
-    self.gammaSpinBox.setToolTip("Gyromagnetic ratio (rad / s T) (Default is proton)")
+    self.gammaSpinBox.setToolTip("Gyromagnetic ratio / PI (rad / s T) (Default is proton )")
     parametersFormLayout.addRow("gamma: ", self.gammaSpinBox)
 
     #
@@ -299,13 +299,16 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
 
     logging.info('Processing started')
 
+    print(baselinePhaseVolumeNode.GetName())
+    print(referencePhaseVolumeNode.GetName())
     imageBaseline  = sitk.Cast(sitkUtils.PullFromSlicer(baselinePhaseVolumeNode.GetID()), sitk.sitkFloat64)
     imageReference = sitk.Cast(sitkUtils.PullFromSlicer(referencePhaseVolumeNode.GetID()), sitk.sitkFloat64)
 
     if tempMapVolumeNode:
       #imageTemp = (imageReference*2.0*numpy.pi/4096.0 - imageBaseline*2.0*numpy.pi/4096.0) / (alpha * gamma * B0 * TE) + BT
       print("(alpha, gamma, B0, TE, TE) = (%f, %f, %f, %f, %f)" % (alpha, gamma, B0, TE, BT))
-      imageTemp = (imageReference - imageBaseline) / (alpha * gamma * B0 * TE) + BT
+      ## NOTE: gamma is given as Gyromagnetic ration / (2*PI) and needs to be mulitiplied by 2*PI
+      imageTemp = (imageReference - imageBaseline) / (alpha * 2.0 * numpy.pi * gamma * B0 * TE) + BT
       if upperThreshold or lowerThreshold:
         imageTempThreshold = sitk.Threshold(imageTemp, lowerThreshold, upperThreshold, 0.0)
         sitkUtils.PushToSlicer(imageTempThreshold, tempMapVolumeNode.GetName(), 0, True)
