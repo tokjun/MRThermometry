@@ -79,6 +79,14 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     parametersFormLayout = qt.QFormLayout(parametersCollapsibleButton)
 
     #
+    # Check box to correct noise
+    #
+    self.rowPhaseImageFlagCheckBox = qt.QCheckBox()
+    self.rowPhaseImageFlagCheckBox.checked = 1
+    self.rowPhaseImageFlagCheckBox.setToolTip("If checked, use original phase images as inputs")
+    parametersFormLayout.addRow("Use raw phase images", self.rowPhaseImageFlagCheckBox)
+
+    #
     # input volume selector
     #
     self.baselinePhaseSelector = slicer.qMRMLNodeComboBox()
@@ -227,6 +235,7 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
 
     # connections
     self.applyButton.connect('clicked(bool)', self.onApplyButton)
+    self.rowPhaseImageFlagCheckBox.connect('toggled(bool)', self.onUseRawPhaseImage)
     self.baselinePhaseSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
     self.referencePhaseSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
     self.tempMapSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
@@ -244,6 +253,9 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
   def onSelect(self):
     self.applyButton.enabled = self.baselinePhaseSelector.currentNode() and self.baselinePhaseSelector.currentNode() and self.tempMapSelector.currentNode()
 
+  def onUseRawPhaseImage(self):
+    pass
+    
   def onUseThreshold(self):
     if self.useThresholdFlagCheckBox.checked == True:
       self.lowerThresholdSpinBox.enabled = True;      
@@ -255,12 +267,14 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
   def onApplyButton(self):
     logic = PRFThermometryLogic()
     if self.useThresholdFlagCheckBox.checked == True:
-      logic.run(self.baselinePhaseSelector.currentNode(), self.referencePhaseSelector.currentNode(),
+      logic.run(self.rowPhaseImageFlagCheckBox.checked,
+                self.baselinePhaseSelector.currentNode(), self.referencePhaseSelector.currentNode(),
                 self.tempMapSelector.currentNode(), self.alphaSpinBox.value, self.gammaSpinBox.value,
                 self.B0SpinBox.value, self.TESpinBox.value, self.BTSpinBox.value,
                 self.upperThresholdSpinBox.value, self.lowerThresholdSpinBox.value)
     else:
-      logic.run(self.baselinePhaseSelector.currentNode(), self.referencePhaseSelector.currentNode(),
+      logic.run(self.rowPhaseImageFlagCheckBox.checked,
+                self.baselinePhaseSelector.currentNode(), self.referencePhaseSelector.currentNode(),
                 self.tempMapSelector.currentNode(), self.alphaSpinBox.value, self.gammaSpinBox.value,
                 self.B0SpinBox.value, self.TESpinBox.value, self.BTSpinBox.value)
 
@@ -288,7 +302,7 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
       return False
     return True
 
-  def run(self, baselinePhaseVolumeNode, referencePhaseVolumeNode, tempMapVolumeNode, alpha, gamma, B0, TE, BT, upperThreshold=None, lowerThreshold=None):
+  def run(self, useRawPhaseImage, baselinePhaseVolumeNode, referencePhaseVolumeNode, tempMapVolumeNode, alpha, gamma, B0, TE, BT, upperThreshold=None, lowerThreshold=None):
     """
     Run the actual algorithm
     """
@@ -305,10 +319,32 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
     imageReference = sitk.Cast(sitkUtils.PullFromSlicer(referencePhaseVolumeNode.GetID()), sitk.sitkFloat64)
 
     if tempMapVolumeNode:
-      #imageTemp = (imageReference*2.0*numpy.pi/4096.0 - imageBaseline*2.0*numpy.pi/4096.0) / (alpha * gamma * B0 * TE) + BT
-      print("(alpha, gamma, B0, TE, TE) = (%f, %f, %f, %f, %f)" % (alpha, gamma, B0, TE, BT))
-      ## NOTE: gamma is given as Gyromagnetic ration / (2*PI) and needs to be mulitiplied by 2*PI
-      imageTemp = (imageReference - imageBaseline) / (alpha * 2.0 * numpy.pi * gamma * B0 * TE) + BT
+
+      phaseDiff = None
+      
+      if useRawPhaseImage == True:
+        imageBaselinePhase = imageBaseline*numpy.pi/4096.0
+        imageBaselineReal = sitk.Cos(imageBaselinePhase)
+        imageBaselineImag = sitk.Sin(imageBaselinePhase)
+        imageBaselineComplex = sitk.RealAndImaginaryToComplex(imageBaselineReal, imageBaselineImag)
+        
+        imageReferencePhase = imageReference*numpy.pi/4096.0
+        imageReferenceReal = sitk.Cos(imageReferencePhase)
+        imageReferenceImag = sitk.Sin(imageReferencePhase)
+        imageReferenceComplex = sitk.RealAndImaginaryToComplex(imageReferenceReal, imageReferenceImag)
+
+        rotComplex = sitk.Divide(imageReferenceComplex, imageBaselineComplex)
+
+        phaseDiff = sitk.ComplexToPhase(rotComplex)
+        
+      else:
+        #imageTemp = (imageReference*2.0*numpy.pi/4096.0 - imageBaseline*2.0*numpy.pi/4096.0) / (alpha * gamma * B0 * TE) + BT
+        print("(alpha, gamma, B0, TE, TE) = (%f, %f, %f, %f, %f)" % (alpha, gamma, B0, TE, BT))
+        ## NOTE: gamma is given as Gyromagnetic ration / (2*PI) and needs to be mulitiplied by 2*PI
+        phaseDiff = imageReference - imageBaseline
+        
+      imageTemp = (phaseDiff) / (alpha * 2.0 * numpy.pi * gamma * B0 * TE) + BT
+        
       if upperThreshold or lowerThreshold:
         imageTempThreshold = sitk.Threshold(imageTemp, lowerThreshold, upperThreshold, 0.0)
         sitkUtils.PushToSlicer(imageTempThreshold, tempMapVolumeNode.GetName(), 0, True)
