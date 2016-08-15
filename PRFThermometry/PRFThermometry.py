@@ -118,6 +118,22 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
 
 
     #
+    # reference mask selector
+    #
+    self.referenceMaskSelector = slicer.qMRMLNodeComboBox()
+    self.referenceMaskSelector.nodeTypes = ( ("vtkMRMLLabelMapVolumeNode"), "" )
+    self.referenceMaskSelector.selectNodeUponCreation = True
+    self.referenceMaskSelector.addEnabled = False
+    self.referenceMaskSelector.removeEnabled = False
+    self.referenceMaskSelector.noneEnabled = True
+    self.referenceMaskSelector.showHidden = False
+    self.referenceMaskSelector.showChildNodeTypes = False
+    self.referenceMaskSelector.setMRMLScene( slicer.mrmlScene )
+    self.referenceMaskSelector.setToolTip( "Pick a mask for reference area (temperature-independent area)" )
+    parametersFormLayout.addRow("Reference Mask: ", self.referenceMaskSelector)
+    
+
+    #
     # tempMap volume selector
     #
     self.tempMapSelector = slicer.qMRMLNodeComboBox()
@@ -269,12 +285,14 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     if self.useThresholdFlagCheckBox.checked == True:
       logic.run(self.rowPhaseImageFlagCheckBox.checked,
                 self.baselinePhaseSelector.currentNode(), self.referencePhaseSelector.currentNode(),
+                self.referenceMaskSelector.currentNode(),
                 self.tempMapSelector.currentNode(), self.alphaSpinBox.value, self.gammaSpinBox.value,
                 self.B0SpinBox.value, self.TESpinBox.value, self.BTSpinBox.value,
                 self.upperThresholdSpinBox.value, self.lowerThresholdSpinBox.value)
     else:
       logic.run(self.rowPhaseImageFlagCheckBox.checked,
                 self.baselinePhaseSelector.currentNode(), self.referencePhaseSelector.currentNode(),
+                self.referenceMaskSelector.currentNode(),
                 self.tempMapSelector.currentNode(), self.alphaSpinBox.value, self.gammaSpinBox.value,
                 self.B0SpinBox.value, self.TESpinBox.value, self.BTSpinBox.value)
 
@@ -302,7 +320,8 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
       return False
     return True
 
-  def run(self, useRawPhaseImage, baselinePhaseVolumeNode, referencePhaseVolumeNode, tempMapVolumeNode, alpha, gamma, B0, TE, BT, upperThreshold=None, lowerThreshold=None):
+  def run(self, useRawPhaseImage, baselinePhaseVolumeNode, referencePhaseVolumeNode, referenceMaskNode,
+          tempMapVolumeNode, alpha, gamma, B0, TE, BT, upperThreshold=None, lowerThreshold=None):
     """
     Run the actual algorithm
     """
@@ -334,15 +353,29 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
         imageReferenceComplex = sitk.RealAndImaginaryToComplex(imageReferenceReal, imageReferenceImag)
 
         rotComplex = sitk.Divide(imageReferenceComplex, imageBaselineComplex)
-
         phaseDiff = sitk.ComplexToPhase(rotComplex)
+        
+        # If refenreceMaskNode is specified, calculate the drift of phase within the ROI
+        # (assuming that there is not phase change due to temperature in the ROI)
+        if referenceMaskNode:
+          maskImage = sitk.Cast(sitkUtils.PullFromSlicer(referenceMaskNode.GetID()), sitk.sitkInt8)
+          LabelStatistics = sitk.LabelStatisticsImageFilter()
+          LabelStatistics.Execute(phaseDiff, maskImage)
+          phaseDrift = LabelStatistics.GetMean(1)
+
+          # Phase difference
+          correctedPhaseDiff = phaseDiff - phaseDrift
+          imageReal = sitk.Cos(correctedPhaseDiff)
+          imageImag = sitk.Sin(correctedPhaseDiff)
+          imageComplex = sitk.RealAndImaginaryToComplex(imageReal, imageImag)
+          phaseDiff = sitk.ComplexToPhase(imageComplex)
         
       else:
         #imageTemp = (imageReference*2.0*numpy.pi/4096.0 - imageBaseline*2.0*numpy.pi/4096.0) / (alpha * gamma * B0 * TE) + BT
-        print("(alpha, gamma, B0, TE, TE) = (%f, %f, %f, %f, %f)" % (alpha, gamma, B0, TE, BT))
         ## NOTE: gamma is given as Gyromagnetic ration / (2*PI) and needs to be mulitiplied by 2*PI
         phaseDiff = imageReference - imageBaseline
-        
+
+      #print("(alpha, gamma, B0, TE, TE) = (%f, %f, %f, %f, %f)" % (alpha, gamma, B0, TE, BT))
       imageTemp = (phaseDiff) / (alpha * 2.0 * numpy.pi * gamma * B0 * TE) + BT
         
       if upperThreshold or lowerThreshold:
