@@ -6,6 +6,7 @@ import logging
 import SimpleITK as sitk
 import sitkUtils
 import numpy
+import math
 
 #
 # PRFThermometry
@@ -339,7 +340,8 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
 
     if tempMapVolumeNode:
 
-      phaseDiff = None
+      self.phaseDiff = None
+      self.phaseDrift = None
       
       if useRawPhaseImage == True:
         imageBaselinePhase = imageBaseline*numpy.pi/4096.0
@@ -353,30 +355,45 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
         imageReferenceComplex = sitk.RealAndImaginaryToComplex(imageReferenceReal, imageReferenceImag)
 
         rotComplex = sitk.Divide(imageReferenceComplex, imageBaselineComplex)
-        phaseDiff = sitk.ComplexToPhase(rotComplex)
+        ## Because of phase wrapping, we need to average complex values instead of phase
+        phaseDiffReal = sitk.ComplexToReal(rotComplex)
+        phaseDiffImag = sitk.ComplexToImaginary(rotComplex)
+        self.phaseDiff = sitk.ComplexToPhase(rotComplex)
+
         
         # If refenreceMaskNode is specified, calculate the drift of phase within the ROI
         # (assuming that there is not phase change due to temperature in the ROI)
         if referenceMaskNode:
           maskImage = sitk.Cast(sitkUtils.PullFromSlicer(referenceMaskNode.GetID()), sitk.sitkInt8)
           LabelStatistics = sitk.LabelStatisticsImageFilter()
-          LabelStatistics.Execute(phaseDiff, maskImage)
-          phaseDrift = LabelStatistics.GetMean(1)
+
+          LabelStatistics.Execute(phaseDiffReal, maskImage)
+          phaseDriftReal = LabelStatistics.GetMean(1)
+          LabelStatistics.Execute(phaseDiffImag, maskImage)
+          phaseDriftImag = LabelStatistics.GetMean(1)
+
+          self.phaseDrift = math.atan2(phaseDriftImag, phaseDriftReal)
+          print('Phase drift = %f' % self.phaseDrift) 
+
+          ## Just to verify 
+          LabelStatistics.Execute(self.phaseDiff, maskImage)
+          phaseDriftTest = LabelStatistics.GetMean(1)
+          print('Phase drift Test= %f' % phaseDriftTest) 
 
           # Phase difference
-          correctedPhaseDiff = phaseDiff - phaseDrift
+          correctedPhaseDiff = self.phaseDiff - self.phaseDrift
           imageReal = sitk.Cos(correctedPhaseDiff)
           imageImag = sitk.Sin(correctedPhaseDiff)
           imageComplex = sitk.RealAndImaginaryToComplex(imageReal, imageImag)
-          phaseDiff = sitk.ComplexToPhase(imageComplex)
+          self.phaseDiff = sitk.ComplexToPhase(imageComplex)
         
       else:
         #imageTemp = (imageReference*2.0*numpy.pi/4096.0 - imageBaseline*2.0*numpy.pi/4096.0) / (alpha * gamma * B0 * TE) + BT
         ## NOTE: gamma is given as Gyromagnetic ration / (2*PI) and needs to be mulitiplied by 2*PI
-        phaseDiff = imageReference - imageBaseline
+        self.phaseDiff = imageReference - imageBaseline
 
       #print("(alpha, gamma, B0, TE, TE) = (%f, %f, %f, %f, %f)" % (alpha, gamma, B0, TE, BT))
-      imageTemp = (phaseDiff) / (alpha * 2.0 * numpy.pi * gamma * B0 * TE) + BT
+      imageTemp = (self.phaseDiff) / (alpha * 2.0 * numpy.pi * gamma * B0 * TE) + BT
         
       if upperThreshold or lowerThreshold:
         imageTempThreshold = sitk.Threshold(imageTemp, lowerThreshold, upperThreshold, 0.0)
