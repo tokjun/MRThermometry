@@ -195,7 +195,7 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     self.TESpinBox.setMinimum(0.0)
     self.TESpinBox.setDecimals(8)
     self.TESpinBox.setValue(0.01)
-    self.TESpinBox.setToolTip("Echo time (ms)")
+    self.TESpinBox.setToolTip("Echo time (s)")
     parametersFormLayout.addRow("TE: ", self.TESpinBox)
 
     #
