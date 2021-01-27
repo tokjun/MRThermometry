@@ -243,6 +243,14 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     parametersFormLayout.addRow("Lower Threshold (deg): ", self.lowerThresholdSpinBox)
 
     #
+    # Check box to correct noise
+    #
+    self.autoUpdateCheckBox = qt.QCheckBox()
+    self.autoUpdateCheckBox.checked = 1
+    self.autoUpdateCheckBox.setToolTip("Automatic Update")
+    parametersFormLayout.addRow("Automatic Update", self.autoUpdateCheckBox)
+
+    #
     # Apply Button
     #
     self.applyButton = qt.QPushButton("Apply")
@@ -257,6 +265,7 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     self.referencePhaseSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
     self.tempMapSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
     self.useThresholdFlagCheckBox.connect('toggled(bool)', self.onUseThreshold)
+    self.autoUpdateCheckBox.connect('toggled(bool)', self.onAutoUpdate)
 
     # Add vertical spacer
     self.layout.addStretch(1)
@@ -264,11 +273,15 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     # Refresh Apply button state
     self.onSelect()
 
+    self.tag = None
+
   def cleanup(self):
     pass
 
   def onSelect(self):
     self.applyButton.enabled = self.baselinePhaseSelector.currentNode() and self.baselinePhaseSelector.currentNode() and self.tempMapSelector.currentNode()
+    
+    
 
   def onUseRawPhaseImage(self):
     pass
@@ -281,6 +294,24 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
       self.lowerThresholdSpinBox.enabled = False;      
       self.upperThresholdSpinBox.enabled = False;      
 
+  def onAutoUpdate(self):
+    if self.autoUpdateCheckBox.checked == True:
+      if self.referencePhaseSelector.currentNode():
+        self.referencePhaseSelector.enabled = False
+        refNode = self.referencePhaseSelector.currentNode()
+        self.tag = refNode.AddObserver(vtk.vtkCommand.ModifiedEvent, self.onModelRefImageModifiedEvent)
+      else: # Cannot set autoupdate 
+        self.autoUpdateCheckBox.checked = Falase
+    else:
+      if self.tag:
+        if self.referencePhaseSelector.currentNode():
+          refNode = self.referencePhaseSelector.currentNode()
+          refNode.RemoveObserver(self.tag)
+        self.referencePhaseSelector.enabled = True
+  
+  def onModelRefImageModifiedEvent(self, caller, event):
+    self.onApplyButton()
+ 
   def onApplyButton(self):
     logic = PRFThermometryLogic()
     if self.useThresholdFlagCheckBox.checked == True:
@@ -400,6 +431,12 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
         sitkUtils.PushToSlicer(imageTempThreshold, tempMapVolumeNode.GetName(), 0, True)
       else:
         sitkUtils.PushToSlicer(imageTemp, tempMapVolumeNode.GetName(), 0, True)
+
+      dnode = tempMapVolumeNode.GetDisplayNode()
+      dnode.SetAndObserveColorNodeID('vtkMRMLColorTableNodeFileColdToHotRainbow.txt')
+      dnode.SetWindowLevelLocked(0)
+      dnode.SetAutoWindowLevel(0)
+      dnode.SetWindowLevelMinMax(35, 85)
 
     logging.info('Processing completed')
 
