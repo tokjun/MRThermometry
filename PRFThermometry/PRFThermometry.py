@@ -369,18 +369,31 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
     imageBaseline  = sitk.Cast(sitkUtils.PullFromSlicer(baselinePhaseVolumeNode.GetID()), sitk.sitkFloat64)
     imageReference = sitk.Cast(sitkUtils.PullFromSlicer(referencePhaseVolumeNode.GetID()), sitk.sitkFloat64)
 
+    # Check the scalar type (Siemens SRC sends image data in 'short' instead of 'unsigned short')
+    baselineImageData = baselinePhaseVolumeNode.GetImageData()
+    scalarType = ''
+    if baselineImageData != None:
+      scalarType = baselineImageData.GetScalarTypeAsString()
+
     if tempMapVolumeNode:
 
       self.phaseDiff = None
       self.phaseDrift = None
       
       if useRawPhaseImage == True:
-        imageBaselinePhase = imageBaseline*numpy.pi/4096.0
+        imageBaselinePhase = None
+        imageReferencePhase = None
+        if scalarType == 'unsigned short':
+          imageBaselinePhase = imageBaseline*numpy.pi/2048.0 - numpy.pi
+          imageReferencePhase = imageReference*numpy.pi/2048.0 - numpy.pi
+        else:
+          imageBaselinePhase = imageBaseline*numpy.pi/4096.0
+          imageReferencePhase = imageReference*numpy.pi/4096.0
+          
         imageBaselineReal = sitk.Cos(imageBaselinePhase)
         imageBaselineImag = sitk.Sin(imageBaselinePhase)
         imageBaselineComplex = sitk.RealAndImaginaryToComplex(imageBaselineReal, imageBaselineImag)
         
-        imageReferencePhase = imageReference*numpy.pi/4096.0
         imageReferenceReal = sitk.Cos(imageReferencePhase)
         imageReferenceImag = sitk.Sin(imageReferencePhase)
         imageReferenceComplex = sitk.RealAndImaginaryToComplex(imageReferenceReal, imageReferenceImag)
