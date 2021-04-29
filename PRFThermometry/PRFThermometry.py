@@ -82,10 +82,10 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     #
     # Check box to correct noise
     #
-    self.rowPhaseImageFlagCheckBox = qt.QCheckBox()
-    self.rowPhaseImageFlagCheckBox.checked = 1
-    self.rowPhaseImageFlagCheckBox.setToolTip("If checked, use original phase images as inputs")
-    parametersFormLayout.addRow("Use raw phase images", self.rowPhaseImageFlagCheckBox)
+    self.rawPhaseImageFlagCheckBox = qt.QCheckBox()
+    self.rawPhaseImageFlagCheckBox.checked = 1
+    self.rawPhaseImageFlagCheckBox.setToolTip("If checked, use original phase images as inputs")
+    parametersFormLayout.addRow("Use raw phase images", self.rawPhaseImageFlagCheckBox)
 
     #
     # input volume selector
@@ -243,7 +243,7 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     parametersFormLayout.addRow("Lower Threshold (deg): ", self.lowerThresholdSpinBox)
 
     #
-    # Check box to correct noise
+    # Check for automatic update
     #
     self.autoUpdateCheckBox = qt.QCheckBox()
     self.autoUpdateCheckBox.checked = 1
@@ -260,7 +260,7 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
 
     # connections
     self.applyButton.connect('clicked(bool)', self.onApplyButton)
-    self.rowPhaseImageFlagCheckBox.connect('toggled(bool)', self.onUseRawPhaseImage)
+    self.rawPhaseImageFlagCheckBox.connect('toggled(bool)', self.onUseRawPhaseImage)
     self.baselinePhaseSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
     self.referencePhaseSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
     self.tempMapSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
@@ -315,14 +315,14 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
   def onApplyButton(self):
     logic = PRFThermometryLogic()
     if self.useThresholdFlagCheckBox.checked == True:
-      logic.run(self.rowPhaseImageFlagCheckBox.checked,
+      logic.run(self.rawPhaseImageFlagCheckBox.checked,
                 self.baselinePhaseSelector.currentNode(), self.referencePhaseSelector.currentNode(),
                 self.referenceMaskSelector.currentNode(),
                 self.tempMapSelector.currentNode(), self.alphaSpinBox.value, self.gammaSpinBox.value,
                 self.B0SpinBox.value, self.TESpinBox.value, self.BTSpinBox.value,
                 self.upperThresholdSpinBox.value, self.lowerThresholdSpinBox.value)
     else:
-      logic.run(self.rowPhaseImageFlagCheckBox.checked,
+      logic.run(self.rawPhaseImageFlagCheckBox.checked,
                 self.baselinePhaseSelector.currentNode(), self.referencePhaseSelector.currentNode(),
                 self.referenceMaskSelector.currentNode(),
                 self.tempMapSelector.currentNode(), self.alphaSpinBox.value, self.gammaSpinBox.value,
