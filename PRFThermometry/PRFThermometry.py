@@ -80,12 +80,20 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     parametersFormLayout = qt.QFormLayout(parametersCollapsibleButton)
 
     #
-    # Check box to correct noise
+    # Check box to use raw phase image
     #
     self.rawPhaseImageFlagCheckBox = qt.QCheckBox()
     self.rawPhaseImageFlagCheckBox.checked = 1
     self.rawPhaseImageFlagCheckBox.setToolTip("If checked, use original phase images as inputs")
     parametersFormLayout.addRow("Use raw phase images", self.rawPhaseImageFlagCheckBox)
+
+    #
+    # Check box to apply phase unwrapping
+    #
+    self.phaseUnwrappingFlagCheckBox = qt.QCheckBox()
+    self.phaseUnwrappingFlagCheckBox.checked = 1
+    self.phaseUnwrappingFlagCheckBox.setToolTip("If checked, use phase unwrapping.")
+    parametersFormLayout.addRow("Use phase unwrapping", self.phaseUnwrappingFlagCheckBox)
 
     #
     # input volume selector
@@ -150,6 +158,24 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     self.tempMapSelector.setToolTip( "Pick the output temperature map." )
     parametersFormLayout.addRow("Output Temperature Map: ", self.tempMapSelector)
 
+
+    #
+    # true phase point
+    #
+    self.truePhasePointSelector = slicer.qMRMLNodeComboBox()
+    self.truePhasePointSelector.nodeTypes = ( ("vtkMRMLMarkupsFiducialNode"), "" )
+    self.truePhasePointSelector.selectNodeUponCreation = True
+    self.truePhasePointSelector.addEnabled = True
+    self.truePhasePointSelector.removeEnabled = True
+    self.truePhasePointSelector.noneEnabled = True
+    self.truePhasePointSelector.renameEnabled = True
+    self.truePhasePointSelector.showHidden = False
+    self.truePhasePointSelector.showChildNodeTypes = False
+    self.truePhasePointSelector.setMRMLScene( slicer.mrmlScene )
+    self.truePhasePointSelector.setToolTip( "Markups node that defines a true phase point." )
+    parametersFormLayout.addRow("True Phase Point: ", self.truePhasePointSelector)
+
+    
     #
     # Temperature coefficient (alpha)
     #
@@ -260,7 +286,6 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
 
     # connections
     self.applyButton.connect('clicked(bool)', self.onApplyButton)
-    self.rawPhaseImageFlagCheckBox.connect('toggled(bool)', self.onUseRawPhaseImage)
     self.baselinePhaseSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
     self.referencePhaseSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
     self.tempMapSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
@@ -281,10 +306,6 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
   def onSelect(self):
     self.applyButton.enabled = self.baselinePhaseSelector.currentNode() and self.baselinePhaseSelector.currentNode() and self.tempMapSelector.currentNode()
     
-    
-
-  def onUseRawPhaseImage(self):
-    pass
     
   def onUseThreshold(self):
     if self.useThresholdFlagCheckBox.checked == True:
@@ -316,16 +337,20 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     logic = PRFThermometryLogic()
     if self.useThresholdFlagCheckBox.checked == True:
       logic.run(self.rawPhaseImageFlagCheckBox.checked,
+                self.phaseUnwrappingFlagCheckBox.checked,
                 self.baselinePhaseSelector.currentNode(), self.referencePhaseSelector.currentNode(),
                 self.referenceMaskSelector.currentNode(),
-                self.tempMapSelector.currentNode(), self.alphaSpinBox.value, self.gammaSpinBox.value,
+                self.tempMapSelector.currentNode(), self.truePhasePointSelector.currentNode(),
+                self.alphaSpinBox.value, self.gammaSpinBox.value,
                 self.B0SpinBox.value, self.TESpinBox.value, self.BTSpinBox.value,
                 self.upperThresholdSpinBox.value, self.lowerThresholdSpinBox.value)
     else:
       logic.run(self.rawPhaseImageFlagCheckBox.checked,
+                self.phaseUnwrappingFlagCheckBox.checked,
                 self.baselinePhaseSelector.currentNode(), self.referencePhaseSelector.currentNode(),
                 self.referenceMaskSelector.currentNode(),
-                self.tempMapSelector.currentNode(), self.alphaSpinBox.value, self.gammaSpinBox.value,
+                self.tempMapSelector.currentNode(), self.truePhasePointSelector.currentNode(),
+                self.alphaSpinBox.value, self.gammaSpinBox.value,
                 self.B0SpinBox.value, self.TESpinBox.value, self.BTSpinBox.value)
 
   def onReload(self, moduleName="PRFThermometry"):
@@ -352,8 +377,8 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
       return False
     return True
 
-  def run(self, useRawPhaseImage, baselinePhaseVolumeNode, referencePhaseVolumeNode, referenceMaskNode,
-          tempMapVolumeNode, alpha, gamma, B0, TE, BT, upperThreshold=None, lowerThreshold=None):
+  def run(self, useRawPhaseImage, usePhaseUnwrapping, baselinePhaseVolumeNode, referencePhaseVolumeNode, referenceMaskNode,
+          tempMapVolumeNode, truePhasePointNode, alpha, gamma, B0, TE, BT, upperThreshold=None, lowerThreshold=None):
     """
     Run the actual algorithm
     """
@@ -366,8 +391,20 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
 
     print(baselinePhaseVolumeNode.GetName())
     print(referencePhaseVolumeNode.GetName())
-    imageBaseline  = sitk.Cast(sitkUtils.PullFromSlicer(baselinePhaseVolumeNode.GetID()), sitk.sitkFloat64)
-    imageReference = sitk.Cast(sitkUtils.PullFromSlicer(referencePhaseVolumeNode.GetID()), sitk.sitkFloat64)
+
+    imageBaseline = None
+    imageReference = None
+    
+    if usePhaseUnwrapping:
+      puBaselinePhaseVolumeNode =  self.unwrap(baselinePhaseVolumeNode, truePhasePointNode)
+      puReferencePhaseVolumeNode =  self.unwrap(referencePhaseVolumeNode, truePhasePointNode)
+      imageBaseline  = sitk.Cast(sitkUtils.PullVolumeFromSlicer(puBaselinePhaseVolumeNode.GetID()), sitk.sitkFloat64)
+      imageReference = sitk.Cast(sitkUtils.PullVolumeFromSlicer(puReferencePhaseVolumeNode.GetID()), sitk.sitkFloat64)
+      slicer.mrmlScene.RemoveNode(puBaselinePhaseVolumeNode)
+      slicer.mrmlScene.RemoveNode(puReferencePhaseVolumeNode)
+    else:
+      imageBaseline  = sitk.Cast(sitkUtils.PullVolumeFromSlicer(baselinePhaseVolumeNode.GetID()), sitk.sitkFloat64)
+      imageReference = sitk.Cast(sitkUtils.PullVolumeFromSlicer(referencePhaseVolumeNode.GetID()), sitk.sitkFloat64)
 
     # Check the scalar type (Siemens SRC sends image data in 'short' instead of 'unsigned short')
     baselineImageData = baselinePhaseVolumeNode.GetImageData()
@@ -380,7 +417,7 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
       self.phaseDiff = None
       self.phaseDrift = None
       
-      if useRawPhaseImage == True:
+      if useRawPhaseImage == True and usePhaseUnwrapping == False:
         imageBaselinePhase = None
         imageReferencePhase = None
         if scalarType == 'unsigned short':
@@ -408,7 +445,7 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
         # If refenreceMaskNode is specified, calculate the drift of phase within the ROI
         # (assuming that there is not phase change due to temperature in the ROI)
         if referenceMaskNode:
-          maskImage = sitk.Cast(sitkUtils.PullFromSlicer(referenceMaskNode.GetID()), sitk.sitkInt8)
+          maskImage = sitk.Cast(sitkUtils.PullVolumeFromSlicer(referenceMaskNode.GetID()), sitk.sitkInt8)
           LabelStatistics = sitk.LabelStatisticsImageFilter()
 
           LabelStatistics.Execute(phaseDiffReal, maskImage)
@@ -432,7 +469,6 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
           self.phaseDiff = sitk.ComplexToPhase(imageComplex)
         
       else:
-        #imageTemp = (imageReference*2.0*numpy.pi/4096.0 - imageBaseline*2.0*numpy.pi/4096.0) / (alpha * gamma * B0 * TE) + BT
         ## NOTE: gamma is given as Gyromagnetic ration / (2*PI) and needs to be mulitiplied by 2*PI
         self.phaseDiff = imageReference - imageBaseline
 
@@ -441,9 +477,9 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
         
       if upperThreshold or lowerThreshold:
         imageTempThreshold = sitk.Threshold(imageTemp, lowerThreshold, upperThreshold, 0.0)
-        sitkUtils.PushToSlicer(imageTempThreshold, tempMapVolumeNode.GetName(), 0, True)
+        sitkUtils.PushVolumeToSlicer(imageTempThreshold, tempMapVolumeNode.GetName(), 0, True)
       else:
-        sitkUtils.PushToSlicer(imageTemp, tempMapVolumeNode.GetName(), 0, True)
+        sitkUtils.PushVolumeToSlicer(imageTemp, tempMapVolumeNode.GetName(), 0, True)
 
       dnode = tempMapVolumeNode.GetDisplayNode()
       dnode.SetAndObserveColorNodeID('vtkMRMLColorTableNodeFileColdToHotRainbow.txt')
@@ -455,6 +491,33 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
 
     return True
 
+  
+  def unwrap(self, inputNode, truePhasePointNode):
+
+    outputNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLScalarVolumeNode")
+        
+    parameters = {}
+    parameters["inputVolume"] = inputNode
+    parameters["outputVolume"] = outputNode
+    parameters["truePhase"] = truePhasePointNode
+
+    # Execute
+    cli = slicer.modules.phaseunwrapping
+    cliNode = slicer.cli.runSync(cli, None, parameters)
+    
+    # Process results
+    if cliNode.GetStatus() & cliNode.ErrorsMask:
+      # error
+      errorText = cliNode.GetErrorText()
+      slicer.mrmlScene.RemoveNode(cliNode)
+      slicer.mrmlScene.RemoveNode(outputNode)
+      #raise ValueError("CLI execution failed: " + errorText)
+
+    # success
+    slicer.mrmlScene.RemoveNode(cliNode)
+    return outputNode
+  
+  
 
 class PRFThermometryTest(ScriptedLoadableModuleTest):
   """
