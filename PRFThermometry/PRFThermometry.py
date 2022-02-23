@@ -7,6 +7,7 @@ import SimpleITK as sitk
 import sitkUtils
 import numpy
 import math
+import copy
 
 #
 # PRFThermometry
@@ -45,38 +46,174 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
 
     ScriptedLoadableModuleWidget.setup(self)
 
-    #--------------------------------------------------
-    # For debugging
-    #
-    # Reload and Test area
-    reloadCollapsibleButton = ctk.ctkCollapsibleButton()
-    reloadCollapsibleButton.text = "Reload && Test"
-    self.layout.addWidget(reloadCollapsibleButton)
-    reloadFormLayout = qt.QFormLayout(reloadCollapsibleButton)
-
-    reloadCollapsibleButton.collapsed = True
-    
-    # reload button
-    # (use this during development, but remove it when delivering
-    #  your module to users)
-    self.reloadButton = qt.QPushButton("Reload")
-    self.reloadButton.toolTip = "Reload this module."
-    self.reloadButton.name = "PRFThermometry Reload"
-    reloadFormLayout.addWidget(self.reloadButton)
-    self.reloadButton.connect('clicked()', self.onReload)
-    #
-    #--------------------------------------------------
-
     # Instantiate and connect widgets ...
 
+    # --------------------------------------------------
+    # I/O Area
+    # --------------------------------------------------
+    ioCollapsibleButton = ctk.ctkCollapsibleButton()
+    ioCollapsibleButton.text = "I/O"
+    self.layout.addWidget(ioCollapsibleButton)
+
+    ioFormLayout = qt.QVBoxLayout(ioCollapsibleButton)
+    
+    ioCommonFormLayout = qt.QFormLayout()
+    ioFormLayout.addLayout(ioCommonFormLayout)
+
     #
+    # reference mask selector
+    #
+    self.referenceMaskSelector = slicer.qMRMLNodeComboBox()
+    self.referenceMaskSelector.nodeTypes = ( ("vtkMRMLLabelMapVolumeNode"), "" )
+    self.referenceMaskSelector.selectNodeUponCreation = True
+    self.referenceMaskSelector.addEnabled = False
+    self.referenceMaskSelector.removeEnabled = False
+    self.referenceMaskSelector.noneEnabled = True
+    self.referenceMaskSelector.showHidden = False
+    self.referenceMaskSelector.showChildNodeTypes = False
+    self.referenceMaskSelector.setMRMLScene( slicer.mrmlScene )
+    self.referenceMaskSelector.setToolTip( "Pick a mask for reference area (temperature-independent area)" )
+    ioCommonFormLayout.addRow("Reference Mask: ", self.referenceMaskSelector)
+
+    #
+    # true phase point
+    #
+    self.truePhasePointSelector = slicer.qMRMLNodeComboBox()
+    self.truePhasePointSelector.nodeTypes = ( ("vtkMRMLMarkupsFiducialNode"), "" )
+    self.truePhasePointSelector.selectNodeUponCreation = True
+    self.truePhasePointSelector.addEnabled = True
+    self.truePhasePointSelector.removeEnabled = True
+    self.truePhasePointSelector.noneEnabled = True
+    self.truePhasePointSelector.renameEnabled = True
+    self.truePhasePointSelector.showHidden = False
+    self.truePhasePointSelector.showChildNodeTypes = False
+    self.truePhasePointSelector.setMRMLScene( slicer.mrmlScene )
+    self.truePhasePointSelector.setToolTip( "Markups node that defines a true phase point." )
+    ioCommonFormLayout.addRow("True Phase Point: ", self.truePhasePointSelector)
+
+    # --------------------
+    # Single Frame
+    #
+    singleFrameGroupBox = ctk.ctkCollapsibleGroupBox()
+    singleFrameGroupBox.title = "Single Frame"
+    singleFrameGroupBox.collapsed = False
+
+    ioFormLayout.addWidget(singleFrameGroupBox)
+    singleFrameFormLayout = qt.QFormLayout(singleFrameGroupBox)
+    
+    #
+    # input volume selector
+    #
+    self.baselinePhaseSelector = slicer.qMRMLNodeComboBox()
+    self.baselinePhaseSelector.nodeTypes = ( ("vtkMRMLScalarVolumeNode"), "" )
+    self.baselinePhaseSelector.selectNodeUponCreation = True
+    self.baselinePhaseSelector.addEnabled = False
+    self.baselinePhaseSelector.removeEnabled = False
+    self.baselinePhaseSelector.noneEnabled = False
+    self.baselinePhaseSelector.showHidden = False
+    self.baselinePhaseSelector.showChildNodeTypes = False
+    self.baselinePhaseSelector.setMRMLScene( slicer.mrmlScene )
+    self.baselinePhaseSelector.setToolTip( "Pick the baseline phase map" )
+    singleFrameFormLayout.addRow("Baseline Phase Volume: ", self.baselinePhaseSelector)
+
+    #
+    # input volume selector
+    #
+    self.referencePhaseSelector = slicer.qMRMLNodeComboBox()
+    self.referencePhaseSelector.nodeTypes = ( ("vtkMRMLScalarVolumeNode"), "" )
+    self.referencePhaseSelector.selectNodeUponCreation = True
+    self.referencePhaseSelector.addEnabled = False
+    self.referencePhaseSelector.removeEnabled = False
+    self.referencePhaseSelector.noneEnabled = False
+    self.referencePhaseSelector.showHidden = False
+    self.referencePhaseSelector.showChildNodeTypes = False
+    self.referencePhaseSelector.setMRMLScene( slicer.mrmlScene )
+    self.referencePhaseSelector.setToolTip( "Select a reference phase volume." )
+    singleFrameFormLayout.addRow("Reference Phase Volume: ", self.referencePhaseSelector)
+
+    #
+    # tempMap volume selector
+    #
+    self.tempMapSelector = slicer.qMRMLNodeComboBox()
+    self.tempMapSelector.nodeTypes = ( ("vtkMRMLScalarVolumeNode"), "" )
+    self.tempMapSelector.selectNodeUponCreation = True
+    self.tempMapSelector.addEnabled = True
+    self.tempMapSelector.removeEnabled = True
+    self.tempMapSelector.noneEnabled = True
+    self.tempMapSelector.renameEnabled = True
+    self.tempMapSelector.showHidden = False
+    self.tempMapSelector.showChildNodeTypes = False
+    self.tempMapSelector.setMRMLScene( slicer.mrmlScene )
+    self.tempMapSelector.setToolTip( "Select an output temperature map." )
+    singleFrameFormLayout.addRow("Output Temperature Map: ", self.tempMapSelector)
+
+    #
+    # Apply Button
+    #
+    self.applyButtonSingle = qt.QPushButton("Generate Single-Frame Temperature Map")
+    self.applyButtonSingle.toolTip = "Run the algorithm for the single frame input."
+    self.applyButtonSingle.enabled = False
+    singleFrameFormLayout.addRow(self.applyButtonSingle)
+
+
+    # --------------------
+    # Multi-Frame
+    #
+    multiFrameGroupBox = ctk.ctkCollapsibleGroupBox()
+    multiFrameGroupBox.title = "Multi Frame"
+    multiFrameGroupBox.collapsed = True
+
+    ioFormLayout.addWidget(multiFrameGroupBox)
+    multiFrameFormLayout = qt.QFormLayout(multiFrameGroupBox)
+    
+    #
+    # input volume selector
+    #
+    self.multiFrameReferencePhaseSelector = slicer.qMRMLNodeComboBox()
+    self.multiFrameReferencePhaseSelector.nodeTypes = ( ("vtkMRMLSequenceNode"), "" )
+    self.multiFrameReferencePhaseSelector.selectNodeUponCreation = True
+    self.multiFrameReferencePhaseSelector.addEnabled = False
+    self.multiFrameReferencePhaseSelector.removeEnabled = False
+    self.multiFrameReferencePhaseSelector.noneEnabled = False
+    self.multiFrameReferencePhaseSelector.showHidden = False
+    self.multiFrameReferencePhaseSelector.showChildNodeTypes = False
+    self.multiFrameReferencePhaseSelector.setMRMLScene( slicer.mrmlScene )
+    self.multiFrameReferencePhaseSelector.setToolTip( "Select a sequence node that contains the reference phase maps" )
+    multiFrameFormLayout.addRow("Reference phase sequence: ", self.multiFrameReferencePhaseSelector)
+
+    #
+    # tempMap volume selector
+    #
+    self.multiFrameTempMapSelector = slicer.qMRMLNodeComboBox()
+    self.multiFrameTempMapSelector.nodeTypes = ( ("vtkMRMLSequenceNode"), "" )
+    self.multiFrameTempMapSelector.selectNodeUponCreation = True
+    self.multiFrameTempMapSelector.addEnabled = True
+    self.multiFrameTempMapSelector.removeEnabled = True
+    self.multiFrameTempMapSelector.noneEnabled = True
+    self.multiFrameTempMapSelector.renameEnabled = True
+    self.multiFrameTempMapSelector.showHidden = False
+    self.multiFrameTempMapSelector.showChildNodeTypes = False
+    self.multiFrameTempMapSelector.setMRMLScene( slicer.mrmlScene )
+    self.multiFrameTempMapSelector.setToolTip( "Select an output sequence to store temperature maps." )
+    multiFrameFormLayout.addRow("Output Temperature Map: ", self.multiFrameTempMapSelector)
+
+    #
+    # Apply Button
+    #
+    self.applyButtonMulti = qt.QPushButton("Generate Multi-Frame Temperature Map")
+    self.applyButtonMulti.toolTip = "Run the algorithm for the multi-frame input."
+    self.applyButtonMulti.enabled = False
+    multiFrameFormLayout.addRow(self.applyButtonMulti)
+
+    
+    # --------------------------------------------------
     # Parameters Area
+    # --------------------------------------------------
     #
     parametersCollapsibleButton = ctk.ctkCollapsibleButton()
     parametersCollapsibleButton.text = "Parameters"
     self.layout.addWidget(parametersCollapsibleButton)
 
-    # Layout within the dummy collapsible button
     parametersFormLayout = qt.QFormLayout(parametersCollapsibleButton)
 
     #
@@ -95,87 +232,6 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     self.phaseUnwrappingFlagCheckBox.setToolTip("If checked, use phase unwrapping.")
     parametersFormLayout.addRow("Use phase unwrapping", self.phaseUnwrappingFlagCheckBox)
 
-    #
-    # input volume selector
-    #
-    self.baselinePhaseSelector = slicer.qMRMLNodeComboBox()
-    self.baselinePhaseSelector.nodeTypes = ( ("vtkMRMLScalarVolumeNode"), "" )
-    self.baselinePhaseSelector.selectNodeUponCreation = True
-    self.baselinePhaseSelector.addEnabled = False
-    self.baselinePhaseSelector.removeEnabled = False
-    self.baselinePhaseSelector.noneEnabled = False
-    self.baselinePhaseSelector.showHidden = False
-    self.baselinePhaseSelector.showChildNodeTypes = False
-    self.baselinePhaseSelector.setMRMLScene( slicer.mrmlScene )
-    self.baselinePhaseSelector.setToolTip( "Pick the baseline phase map" )
-    parametersFormLayout.addRow("Baseline phase image: ", self.baselinePhaseSelector)
-
-    #
-    # input volume selector
-    #
-    self.referencePhaseSelector = slicer.qMRMLNodeComboBox()
-    self.referencePhaseSelector.nodeTypes = ( ("vtkMRMLScalarVolumeNode"), "" )
-    self.referencePhaseSelector.selectNodeUponCreation = True
-    self.referencePhaseSelector.addEnabled = False
-    self.referencePhaseSelector.removeEnabled = False
-    self.referencePhaseSelector.noneEnabled = False
-    self.referencePhaseSelector.showHidden = False
-    self.referencePhaseSelector.showChildNodeTypes = False
-    self.referencePhaseSelector.setMRMLScene( slicer.mrmlScene )
-    self.referencePhaseSelector.setToolTip( "Pick the reference phase map" )
-    parametersFormLayout.addRow("Reference phase image: ", self.referencePhaseSelector)
-
-
-    #
-    # reference mask selector
-    #
-    self.referenceMaskSelector = slicer.qMRMLNodeComboBox()
-    self.referenceMaskSelector.nodeTypes = ( ("vtkMRMLLabelMapVolumeNode"), "" )
-    self.referenceMaskSelector.selectNodeUponCreation = True
-    self.referenceMaskSelector.addEnabled = False
-    self.referenceMaskSelector.removeEnabled = False
-    self.referenceMaskSelector.noneEnabled = True
-    self.referenceMaskSelector.showHidden = False
-    self.referenceMaskSelector.showChildNodeTypes = False
-    self.referenceMaskSelector.setMRMLScene( slicer.mrmlScene )
-    self.referenceMaskSelector.setToolTip( "Pick a mask for reference area (temperature-independent area)" )
-    parametersFormLayout.addRow("Reference Mask: ", self.referenceMaskSelector)
-    
-
-    #
-    # tempMap volume selector
-    #
-    self.tempMapSelector = slicer.qMRMLNodeComboBox()
-    self.tempMapSelector.nodeTypes = ( ("vtkMRMLScalarVolumeNode"), "" )
-    self.tempMapSelector.selectNodeUponCreation = True
-    self.tempMapSelector.addEnabled = True
-    self.tempMapSelector.removeEnabled = True
-    self.tempMapSelector.noneEnabled = True
-    self.tempMapSelector.renameEnabled = True
-    self.tempMapSelector.showHidden = False
-    self.tempMapSelector.showChildNodeTypes = False
-    self.tempMapSelector.setMRMLScene( slicer.mrmlScene )
-    self.tempMapSelector.setToolTip( "Pick the output temperature map." )
-    parametersFormLayout.addRow("Output Temperature Map: ", self.tempMapSelector)
-
-
-    #
-    # true phase point
-    #
-    self.truePhasePointSelector = slicer.qMRMLNodeComboBox()
-    self.truePhasePointSelector.nodeTypes = ( ("vtkMRMLMarkupsFiducialNode"), "" )
-    self.truePhasePointSelector.selectNodeUponCreation = True
-    self.truePhasePointSelector.addEnabled = True
-    self.truePhasePointSelector.removeEnabled = True
-    self.truePhasePointSelector.noneEnabled = True
-    self.truePhasePointSelector.renameEnabled = True
-    self.truePhasePointSelector.showHidden = False
-    self.truePhasePointSelector.showChildNodeTypes = False
-    self.truePhasePointSelector.setMRMLScene( slicer.mrmlScene )
-    self.truePhasePointSelector.setToolTip( "Markups node that defines a true phase point." )
-    parametersFormLayout.addRow("True Phase Point: ", self.truePhasePointSelector)
-
-    
     #
     # Temperature coefficient (alpha)
     #
@@ -245,6 +301,30 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     parametersFormLayout.addRow("Use Threshold", self.useThresholdFlagCheckBox)
     
     #
+    # Temperature color range 
+    #
+    self.scaleRangeMaxSpinBox = qt.QDoubleSpinBox()
+    self.scaleRangeMaxSpinBox.objectName = 'scaleRangeMaxSpinBox'
+    self.scaleRangeMaxSpinBox.setMaximum(200.0)
+    self.scaleRangeMaxSpinBox.setMinimum(0.0)
+    self.scaleRangeMaxSpinBox.setDecimals(4)
+    self.scaleRangeMaxSpinBox.setValue(85.0)
+    self.scaleRangeMaxSpinBox.setToolTip("Maximum value for the temperature color scale.")
+    parametersFormLayout.addRow("Max. scale (deg): ", self.scaleRangeMaxSpinBox)
+
+    #
+    # Lower threshold - We set threshold value to limit the range of intensity 
+    #
+    self.scaleRangeMinSpinBox = qt.QDoubleSpinBox()
+    self.scaleRangeMinSpinBox.objectName = 'scaleRangeMinSpinBox'
+    self.scaleRangeMinSpinBox.setMaximum(200.0)
+    self.scaleRangeMinSpinBox.setMinimum(0.0)
+    self.scaleRangeMinSpinBox.setDecimals(4)
+    self.scaleRangeMinSpinBox.setValue(35.0)
+    self.scaleRangeMinSpinBox.setToolTip("Minimum value for the temperature color scale")
+    parametersFormLayout.addRow("Min. scale (deg): ", self.scaleRangeMinSpinBox)
+
+    #
     # Upper threshold - We set threshold value to limit the range of intensity 
     #
     self.upperThresholdSpinBox = qt.QDoubleSpinBox()
@@ -268,6 +348,9 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     self.lowerThresholdSpinBox.setToolTip("Lower threshold for the output")
     parametersFormLayout.addRow("Lower Threshold (deg): ", self.lowerThresholdSpinBox)
 
+
+
+    
     #
     # Check for automatic update
     #
@@ -276,36 +359,40 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     self.autoUpdateCheckBox.setToolTip("Automatic Update")
     parametersFormLayout.addRow("Automatic Update", self.autoUpdateCheckBox)
 
-    #
-    # Apply Button
-    #
-    self.applyButton = qt.QPushButton("Apply")
-    self.applyButton.toolTip = "Run the algorithm."
-    self.applyButton.enabled = False
-    parametersFormLayout.addRow(self.applyButton)
-
     # connections
-    self.applyButton.connect('clicked(bool)', self.onApplyButton)
-    self.baselinePhaseSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
-    self.referencePhaseSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
-    self.tempMapSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
+    self.applyButtonSingle.connect('clicked(bool)', self.onApplyButtonSingle)
+    self.applyButtonMulti.connect("clicked(bool)", self.onApplyButtonMulti)
+        
+    self.baselinePhaseSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelectSingle)
+    self.referencePhaseSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelectSingle)
+    self.tempMapSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelectSingle)
+    self.multiFrameReferencePhaseSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelectMulti)
+    self.multiFrameTempMapSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelectMulti)
+    
     self.useThresholdFlagCheckBox.connect('toggled(bool)', self.onUseThreshold)
     self.autoUpdateCheckBox.connect('toggled(bool)', self.onAutoUpdate)
 
+    
     # Add vertical spacer
     self.layout.addStretch(1)
 
     # Refresh Apply button state
-    self.onSelect()
+    self.onSelectSingle()
 
     self.tag = None
 
+    
   def cleanup(self):
     pass
 
-  def onSelect(self):
-    self.applyButton.enabled = self.baselinePhaseSelector.currentNode() and self.baselinePhaseSelector.currentNode() and self.tempMapSelector.currentNode()
+  
+  def onSelectSingle(self):
+    self.applyButtonSingle.enabled = self.baselinePhaseSelector.currentNode() and self.baselinePhaseSelector.currentNode() and self.tempMapSelector.currentNode()
+
     
+  def onSelectMulti(self):
+    self.applyButtonMulti.enabled = self.multiFrameReferencePhaseSelector.currentNode() and self.multiFrameTempMapSelector.currentNode()
+
     
   def onUseThreshold(self):
     if self.useThresholdFlagCheckBox.checked == True:
@@ -315,6 +402,7 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
       self.lowerThresholdSpinBox.enabled = False;      
       self.upperThresholdSpinBox.enabled = False;      
 
+      
   def onAutoUpdate(self):
     if self.autoUpdateCheckBox.checked == True:
       if self.referencePhaseSelector.currentNode():
@@ -331,28 +419,85 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
         self.referencePhaseSelector.enabled = True
   
   def onModelRefImageModifiedEvent(self, caller, event):
-    self.onApplyButton()
+    self.onApplyButtonSingle()
  
-  def onApplyButton(self):
+  def onApplyButtonSingle(self):
     logic = PRFThermometryLogic()
-    if self.useThresholdFlagCheckBox.checked == True:
-      logic.run(self.rawPhaseImageFlagCheckBox.checked,
-                self.phaseUnwrappingFlagCheckBox.checked,
-                self.baselinePhaseSelector.currentNode(), self.referencePhaseSelector.currentNode(),
-                self.referenceMaskSelector.currentNode(),
-                self.tempMapSelector.currentNode(), self.truePhasePointSelector.currentNode(),
-                self.alphaSpinBox.value, self.gammaSpinBox.value,
-                self.B0SpinBox.value, self.TESpinBox.value, self.BTSpinBox.value,
-                self.upperThresholdSpinBox.value, self.lowerThresholdSpinBox.value)
-    else:
-      logic.run(self.rawPhaseImageFlagCheckBox.checked,
-                self.phaseUnwrappingFlagCheckBox.checked,
-                self.baselinePhaseSelector.currentNode(), self.referencePhaseSelector.currentNode(),
-                self.referenceMaskSelector.currentNode(),
-                self.tempMapSelector.currentNode(), self.truePhasePointSelector.currentNode(),
-                self.alphaSpinBox.value, self.gammaSpinBox.value,
-                self.B0SpinBox.value, self.TESpinBox.value, self.BTSpinBox.value)
 
+    param = {}
+    param['useRawPhaseImage']         = self.rawPhaseImageFlagCheckBox.checked
+    param['usePhaseUnwrapping']       = self.phaseUnwrappingFlagCheckBox.checked
+    param['baselinePhaseVolumeNode']  = self.baselinePhaseSelector.currentNode()
+    param['referencePhaseVolumeNode'] = self.referencePhaseSelector.currentNode()
+    param['referenceMaskNode']        = self.referenceMaskSelector.currentNode()
+    param['tempMapVolumeNode']        = self.tempMapSelector.currentNode()
+    param['truePhasePointNode']       = self.truePhasePointSelector.currentNode()
+    param['alpha']                    = self.alphaSpinBox.value
+    param['gamma']                    = self.gammaSpinBox.value
+    param['B0']                       = self.B0SpinBox.value
+    param['TE']                       = self.TESpinBox.value
+    param['BT']                       = self.BTSpinBox.value
+    param['colorScaleMax']            = self.scaleRangeMaxSpinBox.value
+    param['colorScaleMin']            = self.scaleRangeMinSpinBox.value
+    
+    if self.useThresholdFlagCheckBox.checked == True:
+      param['upperThreshold']         = self.upperThresholdSpinBox.value
+      param['lowerThreshold']         = self.lowerThresholdSpinBox.value
+    else:
+      param['upperThreshold']         = False
+      param['lowerThreshold']         = False
+
+      
+    logic.runSingleFrame(param)
+      
+    #if self.useThresholdFlagCheckBox.checked == True:
+    #  logic.runSingleFrame(self.rawPhaseImageFlagCheckBox.checked,
+    #            self.phaseUnwrappingFlagCheckBox.checked,
+    #            self.baselinePhaseSelector.currentNode(), self.referencePhaseSelector.currentNode(),
+    #            self.referenceMaskSelector.currentNode(),
+    #            self.tempMapSelector.currentNode(), self.truePhasePointSelector.currentNode(),
+    #            self.alphaSpinBox.value, self.gammaSpinBox.value,
+    #            self.B0SpinBox.value, self.TESpinBox.value, self.BTSpinBox.value,
+    #            self.upperThresholdSpinBox.value, self.lowerThresholdSpinBox.value)
+    #else:
+    #  logic.run(self.rawPhaseImageFlagCheckBox.checked,
+    #            self.phaseUnwrappingFlagCheckBox.checked,
+    #            self.baselinePhaseSelector.currentNode(), self.referencePhaseSelector.currentNode(),
+    #            self.referenceMaskSelector.currentNode(),
+    #            self.tempMapSelector.currentNode(), self.truePhasePointSelector.currentNode(),
+    #            self.alphaSpinBox.value, self.gammaSpinBox.value,
+    #            self.B0SpinBox.value, self.TESpinBox.value, self.BTSpinBox.value)
+
+
+  def onApplyButtonMulti(self):
+    logic = PRFThermometryLogic()
+
+    param = {}
+    param['referencePhaseSequenceNode'] = self.multiFrameReferencePhaseSelector.currentNode()
+    param['tempMapSequenceNode']        = self.multiFrameTempMapSelector.currentNode()
+    param['useRawPhaseImage']         = self.rawPhaseImageFlagCheckBox.checked
+    param['usePhaseUnwrapping']       = self.phaseUnwrappingFlagCheckBox.checked
+    param['referenceMaskNode']        = self.referenceMaskSelector.currentNode()
+    param['truePhasePointNode']       = self.truePhasePointSelector.currentNode()
+    param['alpha']                    = self.alphaSpinBox.value
+    param['gamma']                    = self.gammaSpinBox.value
+    param['B0']                       = self.B0SpinBox.value
+    param['TE']                       = self.TESpinBox.value
+    param['BT']                       = self.BTSpinBox.value
+    param['colorScaleMax']            = self.scaleRangeMaxSpinBox.value
+    param['colorScaleMin']            = self.scaleRangeMinSpinBox.value
+    
+    if self.useThresholdFlagCheckBox.checked == True:
+      param['upperThreshold']         = self.upperThresholdSpinBox.value
+      param['lowerThreshold']         = self.lowerThresholdSpinBox.value
+    else:
+      param['upperThreshold']         = False
+      param['lowerThreshold']         = False
+
+    logic.runMultiFrame(param)
+
+
+    
   def onReload(self, moduleName="PRFThermometry"):
     # Generic reload method for any scripted module.
     # ModuleWizard will subsitute correct default moduleName.
@@ -377,12 +522,27 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
       return False
     return True
 
-  def run(self, useRawPhaseImage, usePhaseUnwrapping, baselinePhaseVolumeNode, referencePhaseVolumeNode, referenceMaskNode,
-          tempMapVolumeNode, truePhasePointNode, alpha, gamma, B0, TE, BT, upperThreshold=None, lowerThreshold=None):
+  def runSingleFrame(self, param): 
     """
     Run the actual algorithm
     """
-
+    useRawPhaseImage         = param['useRawPhaseImage']
+    usePhaseUnwrapping       = param['usePhaseUnwrapping']
+    baselinePhaseVolumeNode  = param['baselinePhaseVolumeNode']
+    referencePhaseVolumeNode = param['referencePhaseVolumeNode']
+    referenceMaskNode        = param['referenceMaskNode']
+    tempMapVolumeNode        = param['tempMapVolumeNode']
+    truePhasePointNode       = param['truePhasePointNode']
+    alpha                    = param['alpha']
+    gamma                    = param['gamma']
+    B0                       = param['B0']
+    TE                       = param['TE']
+    BT                       = param['BT']
+    colorScaleMax            = param['colorScaleMax']
+    colorScaleMin            = param['colorScaleMin']
+    upperThreshold           = param['upperThreshold']
+    lowerThreshold           = param['lowerThreshold']
+    
     if not self.isValidInputOutputData(baselinePhaseVolumeNode, referencePhaseVolumeNode):
       slicer.util.errorDisplay('Input volume is the same as output volume. Choose a different output volume.')
       return False
@@ -398,13 +558,13 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
     if usePhaseUnwrapping:
       puBaselinePhaseVolumeNode =  self.unwrap(baselinePhaseVolumeNode, truePhasePointNode)
       puReferencePhaseVolumeNode =  self.unwrap(referencePhaseVolumeNode, truePhasePointNode)
-      imageBaseline  = sitk.Cast(sitkUtils.PullVolumeFromSlicer(puBaselinePhaseVolumeNode.GetID()), sitk.sitkFloat64)
-      imageReference = sitk.Cast(sitkUtils.PullVolumeFromSlicer(puReferencePhaseVolumeNode.GetID()), sitk.sitkFloat64)
+      imageBaseline  = sitk.Cast(sitkUtils.PullVolumeFromSlicer(puBaselinePhaseVolumeNode), sitk.sitkFloat64)
+      imageReference = sitk.Cast(sitkUtils.PullVolumeFromSlicer(puReferencePhaseVolumeNode), sitk.sitkFloat64)
       slicer.mrmlScene.RemoveNode(puBaselinePhaseVolumeNode)
       slicer.mrmlScene.RemoveNode(puReferencePhaseVolumeNode)
     else:
-      imageBaseline  = sitk.Cast(sitkUtils.PullVolumeFromSlicer(baselinePhaseVolumeNode.GetID()), sitk.sitkFloat64)
-      imageReference = sitk.Cast(sitkUtils.PullVolumeFromSlicer(referencePhaseVolumeNode.GetID()), sitk.sitkFloat64)
+      imageBaseline  = sitk.Cast(sitkUtils.PullVolumeFromSlicer(baselinePhaseVolumeNode), sitk.sitkFloat64)
+      imageReference = sitk.Cast(sitkUtils.PullVolumeFromSlicer(referencePhaseVolumeNode), sitk.sitkFloat64)
 
     # Check the scalar type (Siemens SRC sends image data in 'short' instead of 'unsigned short')
     baselineImageData = baselinePhaseVolumeNode.GetImageData()
@@ -445,7 +605,7 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
         # If refenreceMaskNode is specified, calculate the drift of phase within the ROI
         # (assuming that there is not phase change due to temperature in the ROI)
         if referenceMaskNode:
-          maskImage = sitk.Cast(sitkUtils.PullVolumeFromSlicer(referenceMaskNode.GetID()), sitk.sitkInt8)
+          maskImage = sitk.Cast(sitkUtils.PullVolumeFromSlicer(referenceMaskNode), sitk.sitkInt8)
           LabelStatistics = sitk.LabelStatisticsImageFilter()
 
           LabelStatistics.Execute(phaseDiffReal, maskImage)
@@ -482,20 +642,119 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
         sitkUtils.PushVolumeToSlicer(imageTemp, tempMapVolumeNode.GetName(), 0, True)
 
       dnode = tempMapVolumeNode.GetDisplayNode()
+      if dnode == None:
+        dnode = slicer.mrmlScene.CreateNodeByClass('vtkMRMLScalarVolumeDisplayNode')
+        slicer.mrmlScene.AddNode(dnode)
+        tempMapVolumeNode.SetAndObserveDisplayNodeID(dnode.GetID())
+        
       dnode.SetAndObserveColorNodeID('vtkMRMLColorTableNodeFileColdToHotRainbow.txt')
       dnode.SetWindowLevelLocked(0)
       dnode.SetAutoWindowLevel(0)
-      dnode.SetWindowLevelMinMax(35, 85)
+      dnode.SetWindowLevelMinMax(colorScaleMin, colorScaleMax)
 
     logging.info('Processing completed')
 
     return True
 
   
+  def runMultiFrame(self, param):
+    
+    # Run the algorithm for each volume frame under the given sequence node.
+    # The first frame is used as the baseline for the temperature calculation.
+    # Note that this function temporarily copies the baseline and reference nodes from the sequence node
+    # (which has its own scene) to the main Slicer scene before calling runSingleFrame(), and remove them
+    # once the temperature map is calculated.
+    
+    refSeqNode     = param['referencePhaseSequenceNode']
+    tempMapSeqNode = param['tempMapSequenceNode']
+
+    nVolumes = refSeqNode.GetNumberOfDataNodes()
+    singleParam = copy.copy(param)
+
+    unit = refSeqNode.GetIndexUnit()
+    prefix = '%s_TempMap_' % refSeqNode.GetName()
+
+    # Set up the output sequence node
+    tempMapSeqNode.SetIndexType(refSeqNode.GetIndexType())
+    tempMapSeqNode.SetIndexName(refSeqNode.GetIndexName())
+    tempMapSeqNode.SetIndexUnit(unit)
+    
+    # Use the first image as a baseline
+    baselinePhaseVolumeNode = refSeqNode.GetNthDataNode(0)
+    # Copy the node to the Slicer scene
+    coipedBaselinePhaseVolumeNode = slicer.mrmlScene.CopyNode(baselinePhaseVolumeNode)
+    singleParam['baselinePhaseVolumeNode']  = coipedBaselinePhaseVolumeNode
+    
+    # Create a tempMapVolumeNode.
+    # We only create a single output TempMap node. The TempMap node will be deep-copied when
+    # the node is added to the TempMap sequence node.
+    tempMapNode = slicer.mrmlScene.CreateNodeByClass('vtkMRMLScalarVolumeNode')
+    tempMapNode.SetName(prefix+'Temp')
+    slicer.mrmlScene.AddNode(tempMapNode)
+    singleParam['tempMapVolumeNode'] = tempMapNode
+    
+    for i in range(nVolumes):
+      phaseVolumeNode = refSeqNode.GetNthDataNode(i)
+      copiedPhaseVolumeNode = slicer.mrmlScene.CopyNode(phaseVolumeNode)
+      indexValue = refSeqNode.GetNthIndexValue(i)
+      singleParam['referencePhaseVolumeNode'] = copiedPhaseVolumeNode
+      self.runSingleFrame(singleParam)
+
+      tempMapSeqNode.SetDataNodeAtValue(tempMapNode, indexValue)
+      n = tempMapSeqNode.GetItemNumberFromIndexValue(indexValue)
+      # Give a new new to the copied TempMap under the sequence.
+      dnode = tempMapSeqNode.GetNthDataNode(n)
+      dnode.SetName('%s%s%s' % (prefix, indexValue, unit))
+
+      slicer.mrmlScene.RemoveNode(copiedPhaseVolumeNode)
+
+    slicer.mrmlScene.RemoveNode(coipedBaselinePhaseVolumeNode)
+    slicer.mrmlScene.RemoveNode(tempMapNode)
+    
+    colorScaleMax            = param['colorScaleMax']
+    colorScaleMin            = param['colorScaleMin']
+    
+    self.setProxyNode(tempMapSeqNode, colorScaleMin, colorScaleMax)
+
+
+  def setProxyNode(self, sequenceNode, scaleMin, scaleMax):
+
+    # Find the first sequence browser node
+    sbNode = None
+    col = slicer.mrmlScene.GetNodesByClass('vtkMRMLSequenceBrowserNode')
+    if col.GetNumberOfItems() > 0:
+      # Always use the first node
+      sbNode = col.GetItemAsObject(0)
+    else:
+      sbNode = slicer.mrmlScene.CreateNodeByClass('vtkMRMLSequenceBrowserNode')
+      slicer.mrmlScene.AddNode(sbNode)
+
+    # Add the sequence node as a synchronized sequence node
+    postfix = sbNode.AddSynchronizedSequenceNode(sequenceNode)
+
+    pNode = sbNode.GetProxyNode(sequenceNode)
+    if pNode == None:
+      # Create a new node
+      pNode = slicer.mrmlScene.CreateNodeByClass('vtkMRMLScalarVolumeNode')
+      pNode.SetName(sequenceNode.GetName())
+      slicer.mrmlScene.AddNode(pNode)
+
+    dNode = pNode.GetDisplayNode()
+    if dNode == None:
+      dNode = slicer.mrmlScene.CreateNodeByClass('vtkMRMLScalarVolumeDisplayNode')
+      slicer.mrmlScene.AddNode(dNode)
+      pNode.SetAndObserveDisplayNodeID(dNode.GetID())
+      
+    dNode.SetAndObserveColorNodeID('vtkMRMLColorTableNodeFileColdToHotRainbow.txt')
+    dNode.SetWindowLevelLocked(0)
+    dNode.SetAutoWindowLevel(0)
+    dNode.SetWindowLevelMinMax(scaleMin, scaleMax)
+    
+  
   def unwrap(self, inputNode, truePhasePointNode):
 
     outputNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLScalarVolumeNode")
-        
+
     parameters = {}
     parameters["inputVolume"] = inputNode
     parameters["outputVolume"] = outputNode
