@@ -61,21 +61,21 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     ioCommonFormLayout = qt.QFormLayout()
     ioFormLayout.addLayout(ioCommonFormLayout)
 
-    #
-    # true phase point
-    #
-    self.truePhasePointSelector = slicer.qMRMLNodeComboBox()
-    self.truePhasePointSelector.nodeTypes = ( ("vtkMRMLMarkupsFiducialNode"), "" )
-    self.truePhasePointSelector.selectNodeUponCreation = True
-    self.truePhasePointSelector.addEnabled = True
-    self.truePhasePointSelector.removeEnabled = True
-    self.truePhasePointSelector.noneEnabled = True
-    self.truePhasePointSelector.renameEnabled = True
-    self.truePhasePointSelector.showHidden = False
-    self.truePhasePointSelector.showChildNodeTypes = False
-    self.truePhasePointSelector.setMRMLScene( slicer.mrmlScene )
-    self.truePhasePointSelector.setToolTip( "Markups node that defines a true phase point." )
-    ioCommonFormLayout.addRow("True Phase Point: ", self.truePhasePointSelector)
+    ##
+    ## true phase point
+    ##
+    #self.truePhasePointSelector = slicer.qMRMLNodeComboBox()
+    #self.truePhasePointSelector.nodeTypes = ( ("vtkMRMLMarkupsFiducialNode"), "" )
+    #self.truePhasePointSelector.selectNodeUponCreation = True
+    #self.truePhasePointSelector.addEnabled = True
+    #self.truePhasePointSelector.removeEnabled = True
+    #self.truePhasePointSelector.noneEnabled = True
+    #self.truePhasePointSelector.renameEnabled = True
+    #self.truePhasePointSelector.showHidden = False
+    #self.truePhasePointSelector.showChildNodeTypes = False
+    #self.truePhasePointSelector.setMRMLScene( slicer.mrmlScene )
+    #self.truePhasePointSelector.setToolTip( "Markups node that defines a true phase point." )
+    #ioCommonFormLayout.addRow("True Phase Point: ", self.truePhasePointSelector)
 
     # --------------------
     # Single Frame
@@ -407,7 +407,7 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     param['baselinePhaseVolumeNode']  = self.baselinePhaseSelector.currentNode()
     param['referencePhaseVolumeNode'] = self.referencePhaseSelector.currentNode()
     param['tempMapVolumeNode']        = self.tempMapSelector.currentNode()
-    param['truePhasePointNode']       = self.truePhasePointSelector.currentNode()
+    #param['truePhasePointNode']       = self.truePhasePointSelector.currentNode()
     param['alpha']                    = self.alphaSpinBox.value
     param['gamma']                    = self.gammaSpinBox.value
     param['B0']                       = self.B0SpinBox.value
@@ -434,7 +434,7 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     param['referencePhaseSequenceNode'] = self.multiFrameReferencePhaseSelector.currentNode()
     param['tempMapSequenceNode']        = self.multiFrameTempMapSelector.currentNode()
     param['usePhaseUnwrapping']       = self.phaseUnwrappingFlagCheckBox.checked
-    param['truePhasePointNode']       = self.truePhasePointSelector.currentNode()
+    #param['truePhasePointNode']       = self.truePhasePointSelector.currentNode()
     param['alpha']                    = self.alphaSpinBox.value
     param['gamma']                    = self.gammaSpinBox.value
     param['B0']                       = self.B0SpinBox.value
@@ -486,7 +486,7 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
     baselinePhaseVolumeNode  = param['baselinePhaseVolumeNode']
     referencePhaseVolumeNode = param['referencePhaseVolumeNode']
     tempMapVolumeNode        = param['tempMapVolumeNode']
-    truePhasePointNode       = param['truePhasePointNode']
+    #truePhasePointNode       = param['truePhasePointNode']
     alpha                    = param['alpha']
     gamma                    = param['gamma']
     B0                       = param['B0']
@@ -534,12 +534,12 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
       
       if usePhaseUnwrapping == True:
         print('usePhaseUnwrapping')
-        imageBaselinePhase  = self.unwrap2(imageBaselinePhase)
-        imageReferencePhase = self.unwrap2(imageReferencePhase)
+        imageBaselinePhase  = self.unwrap(imageBaselinePhase)
+        imageReferencePhase = self.unwrap(imageReferencePhase)
         
         # Match the phases
         # Phase unwrapping often end up shifting the entire phase map by pi*N. Try shifting the reference phase map
-        # by pi*N where N = -2, -1, ... ,3 and check the difference between the baseline and reference images.
+        # by pi*N where N = -2, -1, ... ,2 and check the difference between the baseline and reference images.
         stat = sitk.StatisticsImageFilter()
         meanDiffList = numpy.array([])
         nList = list(range(-2,3))
@@ -575,6 +575,9 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
       dnode.SetWindowLevelLocked(0)
       dnode.SetAutoWindowLevel(0)
       dnode.SetWindowLevelMinMax(colorScaleMin, colorScaleMax)
+
+      colorLegendDisplayNode = slicer.modules.colors.logic().AddDefaultColorLegendDisplayNode(tempMapVolumeNode)
+      colorLegendDisplayNode.VisibilityOn()
 
     logging.info('Processing completed')
 
@@ -675,33 +678,7 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
     dNode.SetWindowLevelMinMax(scaleMin, scaleMax)
     
   
-  def unwrap(self, inputNode, truePhasePointNode):
-
-    outputNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLScalarVolumeNode")
-
-    parameters = {}
-    parameters["inputVolume"] = inputNode
-    parameters["outputVolume"] = outputNode
-    parameters["truePhase"] = truePhasePointNode
-
-    # Execute
-    cli = slicer.modules.phaseunwrapping
-    cliNode = slicer.cli.runSync(cli, None, parameters)
-    
-    # Process results
-    if cliNode.GetStatus() & cliNode.ErrorsMask:
-      # error
-      errorText = cliNode.GetErrorText()
-      slicer.mrmlScene.RemoveNode(cliNode)
-      slicer.mrmlScene.RemoveNode(outputNode)
-      #raise ValueError("CLI execution failed: " + errorText)
-
-    # success
-    slicer.mrmlScene.RemoveNode(cliNode)
-    return outputNode
-  
-
-  def unwrap2(self, imagePhase):
+  def unwrap(self, imagePhase):
     imagePhaseNP = sitk.GetArrayFromImage(imagePhase)
     imageUnwrappedNP = unwrap_phase(imagePhaseNP)
     imageUnwrapped = sitk.GetImageFromArray(imageUnwrappedNP)
