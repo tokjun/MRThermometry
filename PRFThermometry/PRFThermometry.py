@@ -8,6 +8,7 @@ import sitkUtils
 import numpy
 import math
 import copy
+from skimage.restoration import unwrap_phase
 
 #
 # PRFThermometry
@@ -59,21 +60,6 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     
     ioCommonFormLayout = qt.QFormLayout()
     ioFormLayout.addLayout(ioCommonFormLayout)
-
-    #
-    # reference mask selector
-    #
-    self.referenceMaskSelector = slicer.qMRMLNodeComboBox()
-    self.referenceMaskSelector.nodeTypes = ( ("vtkMRMLLabelMapVolumeNode"), "" )
-    self.referenceMaskSelector.selectNodeUponCreation = True
-    self.referenceMaskSelector.addEnabled = False
-    self.referenceMaskSelector.removeEnabled = False
-    self.referenceMaskSelector.noneEnabled = True
-    self.referenceMaskSelector.showHidden = False
-    self.referenceMaskSelector.showChildNodeTypes = False
-    self.referenceMaskSelector.setMRMLScene( slicer.mrmlScene )
-    self.referenceMaskSelector.setToolTip( "Pick a mask for reference area (temperature-independent area)" )
-    ioCommonFormLayout.addRow("Reference Mask: ", self.referenceMaskSelector)
 
     #
     # true phase point
@@ -215,14 +201,6 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     self.layout.addWidget(parametersCollapsibleButton)
 
     parametersFormLayout = qt.QFormLayout(parametersCollapsibleButton)
-
-    #
-    # Check box to use raw phase image
-    #
-    self.rawPhaseImageFlagCheckBox = qt.QCheckBox()
-    self.rawPhaseImageFlagCheckBox.checked = 1
-    self.rawPhaseImageFlagCheckBox.setToolTip("If checked, use original phase images as inputs")
-    parametersFormLayout.addRow("Use raw phase images", self.rawPhaseImageFlagCheckBox)
 
     #
     # Check box to apply phase unwrapping
@@ -425,11 +403,9 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     logic = PRFThermometryLogic()
 
     param = {}
-    param['useRawPhaseImage']         = self.rawPhaseImageFlagCheckBox.checked
     param['usePhaseUnwrapping']       = self.phaseUnwrappingFlagCheckBox.checked
     param['baselinePhaseVolumeNode']  = self.baselinePhaseSelector.currentNode()
     param['referencePhaseVolumeNode'] = self.referencePhaseSelector.currentNode()
-    param['referenceMaskNode']        = self.referenceMaskSelector.currentNode()
     param['tempMapVolumeNode']        = self.tempMapSelector.currentNode()
     param['truePhasePointNode']       = self.truePhasePointSelector.currentNode()
     param['alpha']                    = self.alphaSpinBox.value
@@ -449,24 +425,6 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
 
       
     logic.runSingleFrame(param)
-      
-    #if self.useThresholdFlagCheckBox.checked == True:
-    #  logic.runSingleFrame(self.rawPhaseImageFlagCheckBox.checked,
-    #            self.phaseUnwrappingFlagCheckBox.checked,
-    #            self.baselinePhaseSelector.currentNode(), self.referencePhaseSelector.currentNode(),
-    #            self.referenceMaskSelector.currentNode(),
-    #            self.tempMapSelector.currentNode(), self.truePhasePointSelector.currentNode(),
-    #            self.alphaSpinBox.value, self.gammaSpinBox.value,
-    #            self.B0SpinBox.value, self.TESpinBox.value, self.BTSpinBox.value,
-    #            self.upperThresholdSpinBox.value, self.lowerThresholdSpinBox.value)
-    #else:
-    #  logic.run(self.rawPhaseImageFlagCheckBox.checked,
-    #            self.phaseUnwrappingFlagCheckBox.checked,
-    #            self.baselinePhaseSelector.currentNode(), self.referencePhaseSelector.currentNode(),
-    #            self.referenceMaskSelector.currentNode(),
-    #            self.tempMapSelector.currentNode(), self.truePhasePointSelector.currentNode(),
-    #            self.alphaSpinBox.value, self.gammaSpinBox.value,
-    #            self.B0SpinBox.value, self.TESpinBox.value, self.BTSpinBox.value)
 
 
   def onApplyButtonMulti(self):
@@ -475,9 +433,7 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     param = {}
     param['referencePhaseSequenceNode'] = self.multiFrameReferencePhaseSelector.currentNode()
     param['tempMapSequenceNode']        = self.multiFrameTempMapSelector.currentNode()
-    param['useRawPhaseImage']         = self.rawPhaseImageFlagCheckBox.checked
     param['usePhaseUnwrapping']       = self.phaseUnwrappingFlagCheckBox.checked
-    param['referenceMaskNode']        = self.referenceMaskSelector.currentNode()
     param['truePhasePointNode']       = self.truePhasePointSelector.currentNode()
     param['alpha']                    = self.alphaSpinBox.value
     param['gamma']                    = self.gammaSpinBox.value
@@ -526,11 +482,9 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
     """
     Run the actual algorithm
     """
-    useRawPhaseImage         = param['useRawPhaseImage']
     usePhaseUnwrapping       = param['usePhaseUnwrapping']
     baselinePhaseVolumeNode  = param['baselinePhaseVolumeNode']
     referencePhaseVolumeNode = param['referencePhaseVolumeNode']
-    referenceMaskNode        = param['referenceMaskNode']
     tempMapVolumeNode        = param['tempMapVolumeNode']
     truePhasePointNode       = param['truePhasePointNode']
     alpha                    = param['alpha']
@@ -555,85 +509,55 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
     imageBaseline = None
     imageReference = None
     
-    if usePhaseUnwrapping:
-      puBaselinePhaseVolumeNode =  self.unwrap(baselinePhaseVolumeNode, truePhasePointNode)
-      puReferencePhaseVolumeNode =  self.unwrap(referencePhaseVolumeNode, truePhasePointNode)
-      imageBaseline  = sitk.Cast(sitkUtils.PullVolumeFromSlicer(puBaselinePhaseVolumeNode), sitk.sitkFloat64)
-      imageReference = sitk.Cast(sitkUtils.PullVolumeFromSlicer(puReferencePhaseVolumeNode), sitk.sitkFloat64)
-      slicer.mrmlScene.RemoveNode(puBaselinePhaseVolumeNode)
-      slicer.mrmlScene.RemoveNode(puReferencePhaseVolumeNode)
-    else:
-      imageBaseline  = sitk.Cast(sitkUtils.PullVolumeFromSlicer(baselinePhaseVolumeNode), sitk.sitkFloat64)
-      imageReference = sitk.Cast(sitkUtils.PullVolumeFromSlicer(referencePhaseVolumeNode), sitk.sitkFloat64)
-
     # Check the scalar type (Siemens SRC sends image data in 'short' instead of 'unsigned short')
     baselineImageData = baselinePhaseVolumeNode.GetImageData()
     scalarType = ''
     if baselineImageData != None:
       scalarType = baselineImageData.GetScalarTypeAsString()
+      
+    imageBaseline  = sitk.Cast(sitkUtils.PullVolumeFromSlicer(baselinePhaseVolumeNode), sitk.sitkFloat64)
+    imageReference  = sitk.Cast(sitkUtils.PullVolumeFromSlicer(referencePhaseVolumeNode), sitk.sitkFloat64)
 
     if tempMapVolumeNode:
 
       self.phaseDiff = None
       self.phaseDrift = None
       
-      if useRawPhaseImage == True and usePhaseUnwrapping == False:
-        imageBaselinePhase = None
-        imageReferencePhase = None
-        if scalarType == 'unsigned short':
-          imageBaselinePhase = imageBaseline*numpy.pi/2048.0 - numpy.pi
-          imageReferencePhase = imageReference*numpy.pi/2048.0 - numpy.pi
-        else:
-          imageBaselinePhase = imageBaseline*numpy.pi/4096.0
-          imageReferencePhase = imageReference*numpy.pi/4096.0
-          
-        imageBaselineReal = sitk.Cos(imageBaselinePhase)
-        imageBaselineImag = sitk.Sin(imageBaselinePhase)
-        imageBaselineComplex = sitk.RealAndImaginaryToComplex(imageBaselineReal, imageBaselineImag)
-        
-        imageReferenceReal = sitk.Cos(imageReferencePhase)
-        imageReferenceImag = sitk.Sin(imageReferencePhase)
-        imageReferenceComplex = sitk.RealAndImaginaryToComplex(imageReferenceReal, imageReferenceImag)
-
-        rotComplex = sitk.Divide(imageReferenceComplex, imageBaselineComplex)
-        ## Because of phase wrapping, we need to average complex values instead of phase
-        phaseDiffReal = sitk.ComplexToReal(rotComplex)
-        phaseDiffImag = sitk.ComplexToImaginary(rotComplex)
-        self.phaseDiff = sitk.ComplexToPhase(rotComplex)
-
-        
-        # If refenreceMaskNode is specified, calculate the drift of phase within the ROI
-        # (assuming that there is not phase change due to temperature in the ROI)
-        if referenceMaskNode:
-          maskImage = sitk.Cast(sitkUtils.PullVolumeFromSlicer(referenceMaskNode), sitk.sitkInt8)
-          LabelStatistics = sitk.LabelStatisticsImageFilter()
-
-          LabelStatistics.Execute(phaseDiffReal, maskImage)
-          phaseDriftReal = LabelStatistics.GetMean(1)
-          LabelStatistics.Execute(phaseDiffImag, maskImage)
-          phaseDriftImag = LabelStatistics.GetMean(1)
-
-          self.phaseDrift = math.atan2(phaseDriftImag, phaseDriftReal)
-          print('Phase drift = %f' % self.phaseDrift) 
-
-          ## Just to verify 
-          LabelStatistics.Execute(self.phaseDiff, maskImage)
-          phaseDriftTest = LabelStatistics.GetMean(1)
-          print('Phase drift Test= %f' % phaseDriftTest) 
-
-          # Phase difference
-          correctedPhaseDiff = self.phaseDiff - self.phaseDrift
-          imageReal = sitk.Cos(correctedPhaseDiff)
-          imageImag = sitk.Sin(correctedPhaseDiff)
-          imageComplex = sitk.RealAndImaginaryToComplex(imageReal, imageImag)
-          self.phaseDiff = sitk.ComplexToPhase(imageComplex)
-        
+      if scalarType == 'unsigned short':
+        print('imageBaseline*numpy.pi/2048.0 - numpy.pi')
+        imageBaselinePhase = imageBaseline*numpy.pi/2048.0 - numpy.pi
+        imageReferencePhase = imageReference*numpy.pi/2048.0 - numpy.pi
       else:
-        ## NOTE: gamma is given as Gyromagnetic ration / (2*PI) and needs to be mulitiplied by 2*PI
-        self.phaseDiff = imageReference - imageBaseline
+        print('imageBaseline*numpy.pi/4096.0')
+        imageBaselinePhase = imageBaseline*numpy.pi/4096.0
+        imageReferencePhase = imageReference*numpy.pi/4096.0
+      
+      if usePhaseUnwrapping == True:
+        print('usePhaseUnwrapping')
+        imageBaselinePhase  = self.unwrap2(imageBaselinePhase)
+        imageReferencePhase = self.unwrap2(imageReferencePhase)
+        
+        # Match the phases
+        # Phase unwrapping often end up shifting the entire phase map by pi*N. Try shifting the reference phase map
+        # by pi*N where N = -2, -1, ... ,3 and check the difference between the baseline and reference images.
+        stat = sitk.StatisticsImageFilter()
+        meanDiffList = numpy.array([])
+        nList = list(range(-2,3))
+        for n in nList:
+          phaseShift = numpy.pi * n
+          diffImage = imageReferencePhase + phaseShift - imageBaselinePhase
+          stat.Execute(diffImage)
+          meanDiffList = numpy.append(meanDiffList, numpy.abs(stat.GetMean()))
+        
+        minIndex = numpy.argmin(meanDiffList)
+        phaseShift = numpy.pi * nList[minIndex]
+        imageReferencePhase = imageReferencePhase + phaseShift
+        
+          
+      self.phaseDiff = imageReferencePhase - imageBaselinePhase
 
-      #print("(alpha, gamma, B0, TE, TE) = (%f, %f, %f, %f, %f)" % (alpha, gamma, B0, TE, BT))
-      imageTemp = (self.phaseDiff) / (alpha * 2.0 * numpy.pi * gamma * B0 * TE) + BT
+      print("(alpha, gamma, B0, TE, TE) = (%f, %f, %f, %f, %f)" % (alpha, gamma, B0, TE, BT))
+      imageTemp = self.phaseDiff / (alpha * 2.0 * numpy.pi * gamma * B0 * TE) + BT
         
       if upperThreshold or lowerThreshold:
         imageTempThreshold = sitk.Threshold(imageTemp, lowerThreshold, upperThreshold, 0.0)
@@ -776,7 +700,17 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
     slicer.mrmlScene.RemoveNode(cliNode)
     return outputNode
   
-  
+
+  def unwrap2(self, imagePhase):
+    imagePhaseNP = sitk.GetArrayFromImage(imagePhase)
+    imageUnwrappedNP = unwrap_phase(imagePhaseNP)
+    imageUnwrapped = sitk.GetImageFromArray(imageUnwrappedNP)
+    imageUnwrapped.SetOrigin(imagePhase.GetOrigin())
+    imageUnwrapped.SetSpacing(imagePhase.GetSpacing())
+    imageUnwrapped.SetDirection(imagePhase.GetDirection())
+    
+    return imageUnwrapped
+    
 
 class PRFThermometryTest(ScriptedLoadableModuleTest):
   """
