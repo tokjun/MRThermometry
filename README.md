@@ -9,7 +9,7 @@ can be installed using pip from the Python interactor:
 
 ~~~~
 import pip
-pip.main(['install', 'scipy'])
+pip.main(['install', 'scikit-image'])
 ~~~~
 
 
