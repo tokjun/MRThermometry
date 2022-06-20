@@ -634,8 +634,8 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
     if param['baselinePhaseVolumeNode'] == None:
       baselinePhaseVolumeNode = refSeqNode.GetNthDataNode(0)
       # Copy the node to the Slicer scene
-      coipedBaselinePhaseVolumeNode = slicer.mrmlScene.CopyNode(baselinePhaseVolumeNode)
-      singleParam['baselinePhaseVolumeNode']  = coipedBaselinePhaseVolumeNode
+      copiedBaselinePhaseVolumeNode = slicer.mrmlScene.CopyNode(baselinePhaseVolumeNode)
+      singleParam['baselinePhaseVolumeNode']  = copiedBaselinePhaseVolumeNode
     
     # Create a tempMapVolumeNode.
     # We only create a single output TempMap node. The TempMap node will be deep-copied when
@@ -646,6 +646,7 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
     singleParam['tempMapVolumeNode'] = tempMapNode
     
     for i in range(nVolumes):
+      print('Processing image # %d / %d' % ((i+1), nVolumes))
       phaseVolumeNode = refSeqNode.GetNthDataNode(i)
       copiedPhaseVolumeNode = slicer.mrmlScene.CopyNode(phaseVolumeNode)
       indexValue = refSeqNode.GetNthIndexValue(i)
@@ -660,7 +661,8 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
 
       slicer.mrmlScene.RemoveNode(copiedPhaseVolumeNode)
 
-    slicer.mrmlScene.RemoveNode(coipedBaselinePhaseVolumeNode)
+    if param['baselinePhaseVolumeNode'] == None:
+      slicer.mrmlScene.RemoveNode(copiedBaselinePhaseVolumeNode)
     slicer.mrmlScene.RemoveNode(tempMapNode)
     
     colorScaleMax            = param['colorScaleMax']
