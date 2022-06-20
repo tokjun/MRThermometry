@@ -95,7 +95,7 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     self.baselinePhaseSelector.selectNodeUponCreation = True
     self.baselinePhaseSelector.addEnabled = False
     self.baselinePhaseSelector.removeEnabled = False
-    self.baselinePhaseSelector.noneEnabled = False
+    self.baselinePhaseSelector.noneEnabled = True
     self.baselinePhaseSelector.showHidden = False
     self.baselinePhaseSelector.showChildNodeTypes = False
     self.baselinePhaseSelector.setMRMLScene( slicer.mrmlScene )
@@ -110,13 +110,28 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     self.referencePhaseSelector.selectNodeUponCreation = True
     self.referencePhaseSelector.addEnabled = False
     self.referencePhaseSelector.removeEnabled = False
-    self.referencePhaseSelector.noneEnabled = False
+    self.referencePhaseSelector.noneEnabled = True
     self.referencePhaseSelector.showHidden = False
     self.referencePhaseSelector.showChildNodeTypes = False
     self.referencePhaseSelector.setMRMLScene( slicer.mrmlScene )
     self.referencePhaseSelector.setToolTip( "Select a reference phase volume." )
     singleFrameFormLayout.addRow("Reference Phase Volume: ", self.referencePhaseSelector)
 
+    #
+    # input volume selector
+    #
+    self.maskSelector = slicer.qMRMLNodeComboBox()
+    self.maskSelector.nodeTypes = ( ("vtkMRMLLabelMapVolumeNode"), "" )
+    self.maskSelector.selectNodeUponCreation = True
+    self.maskSelector.addEnabled = False
+    self.maskSelector.removeEnabled = False
+    self.maskSelector.noneEnabled = True
+    self.maskSelector.showHidden = False
+    self.maskSelector.showChildNodeTypes = False
+    self.maskSelector.setMRMLScene( slicer.mrmlScene )
+    self.maskSelector.setToolTip( "Select a mask volume." )
+    singleFrameFormLayout.addRow("Mask Volume: ", self.maskSelector)
+    
     #
     # tempMap volume selector
     #
@@ -406,6 +421,7 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     param['usePhaseUnwrapping']       = self.phaseUnwrappingFlagCheckBox.checked
     param['baselinePhaseVolumeNode']  = self.baselinePhaseSelector.currentNode()
     param['referencePhaseVolumeNode'] = self.referencePhaseSelector.currentNode()
+    param['maskVolumeNode']           = self.maskSelector.currentNode()
     param['tempMapVolumeNode']        = self.tempMapSelector.currentNode()
     #param['truePhasePointNode']       = self.truePhasePointSelector.currentNode()
     param['alpha']                    = self.alphaSpinBox.value
@@ -431,6 +447,8 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     logic = PRFThermometryLogic()
 
     param = {}
+    param['baselinePhaseVolumeNode']  = self.baselinePhaseSelector.currentNode()
+    param['maskVolumeNode']           = self.maskSelector.currentNode()
     param['referencePhaseSequenceNode'] = self.multiFrameReferencePhaseSelector.currentNode()
     param['tempMapSequenceNode']        = self.multiFrameTempMapSelector.currentNode()
     param['usePhaseUnwrapping']       = self.phaseUnwrappingFlagCheckBox.checked
@@ -485,6 +503,7 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
     usePhaseUnwrapping       = param['usePhaseUnwrapping']
     baselinePhaseVolumeNode  = param['baselinePhaseVolumeNode']
     referencePhaseVolumeNode = param['referencePhaseVolumeNode']
+    maskVolumeNode           = param['maskVolumeNode']
     tempMapVolumeNode        = param['tempMapVolumeNode']
     #truePhasePointNode       = param['truePhasePointNode']
     alpha                    = param['alpha']
@@ -517,6 +536,11 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
       
     imageBaseline  = sitk.Cast(sitkUtils.PullVolumeFromSlicer(baselinePhaseVolumeNode), sitk.sitkFloat64)
     imageReference  = sitk.Cast(sitkUtils.PullVolumeFromSlicer(referencePhaseVolumeNode), sitk.sitkFloat64)
+    mask = None
+    if param['maskVolumeNode']:
+      mask = sitk.Cast(sitkUtils.PullVolumeFromSlicer(maskVolumeNode), sitk.sitkFloat64)
+      imageBaseline = imageBaseline * mask
+      imageReference = imageReference * mask
 
     if tempMapVolumeNode:
 
@@ -587,7 +611,7 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
   def runMultiFrame(self, param):
     
     # Run the algorithm for each volume frame under the given sequence node.
-    # The first frame is used as the baseline for the temperature calculation.
+    # If a baseline volume is not specified, the first frame is used as the baseline for the temperature calculation.
     # Note that this function temporarily copies the baseline and reference nodes from the sequence node
     # (which has its own scene) to the main Slicer scene before calling runSingleFrame(), and remove them
     # once the temperature map is calculated.
@@ -606,11 +630,12 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
     tempMapSeqNode.SetIndexName(refSeqNode.GetIndexName())
     tempMapSeqNode.SetIndexUnit(unit)
     
-    # Use the first image as a baseline
-    baselinePhaseVolumeNode = refSeqNode.GetNthDataNode(0)
-    # Copy the node to the Slicer scene
-    coipedBaselinePhaseVolumeNode = slicer.mrmlScene.CopyNode(baselinePhaseVolumeNode)
-    singleParam['baselinePhaseVolumeNode']  = coipedBaselinePhaseVolumeNode
+    # If 'baselinePhaseVolumeNode' is None, use the first image as a baseline
+    if param['baselinePhaseVolumeNode'] == None:
+      baselinePhaseVolumeNode = refSeqNode.GetNthDataNode(0)
+      # Copy the node to the Slicer scene
+      coipedBaselinePhaseVolumeNode = slicer.mrmlScene.CopyNode(baselinePhaseVolumeNode)
+      singleParam['baselinePhaseVolumeNode']  = coipedBaselinePhaseVolumeNode
     
     # Create a tempMapVolumeNode.
     # We only create a single output TempMap node. The TempMap node will be deep-copied when
