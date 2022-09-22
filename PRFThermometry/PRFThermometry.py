@@ -197,7 +197,7 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     self.multiFrameTempMapSelector.setMRMLScene( slicer.mrmlScene )
     self.multiFrameTempMapSelector.setToolTip( "Select an output sequence to store temperature maps." )
     multiFrameFormLayout.addRow("Output Temperature Map: ", self.multiFrameTempMapSelector)
-
+ 
     #
     # Apply Button
     #
@@ -206,6 +206,30 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     self.applyButtonMulti.enabled = False
     multiFrameFormLayout.addRow(self.applyButtonMulti)
 
+    
+    # --------------------
+    # Simple Masking
+    #
+    maskingGroupBox = ctk.ctkCollapsibleGroupBox()
+    maskingGroupBox.title = "Simple Masking"
+    maskingGroupBox.collapsed = True
+
+    ioFormLayout.addWidget(maskingGroupBox)
+    maskingFormLayout = qt.QFormLayout(maskingGroupBox)
+    
+    self.simpleMaskingFlagCheckBox = qt.QCheckBox()
+    self.simpleMaskingFlagCheckBox.checked = 0
+    self.simpleMaskingFlagCheckBox.setToolTip("If checked, simple masking is ON.")
+    maskingFormLayout.addRow("Use Simple Masking", self.simpleMaskingFlagCheckBox)
+    
+    self.radiusSpinBox = qt.QDoubleSpinBox()
+    self.radiusSpinBox.objectName = 'radiusSpinBox'
+    self.radiusSpinBox.setMaximum(10.0)
+    self.radiusSpinBox.setMinimum(0.0)
+    self.radiusSpinBox.setDecimals(4)
+    self.radiusSpinBox.setValue(0.8)
+    self.radiusSpinBox.setToolTip("Radius of the disk mask")
+    maskingFormLayout.addRow("Radius: ", self.radiusSpinBox)
     
     # --------------------------------------------------
     # Parameters Area
@@ -365,6 +389,8 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     self.useThresholdFlagCheckBox.connect('toggled(bool)', self.onUseThreshold)
     self.autoUpdateCheckBox.connect('toggled(bool)', self.onAutoUpdate)
 
+    self.simpleMaskingFlagCheckBox.connect('toggled(bool)', self.onUseSimpleMask)
+    
     
     # Add vertical spacer
     self.layout.addStretch(1)
@@ -395,6 +421,13 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
       self.lowerThresholdSpinBox.enabled = False;      
       self.upperThresholdSpinBox.enabled = False;      
 
+  def onUseSimpleMask(self):
+    
+    if self.simpleMaskingFlagCheckBox.checked == 1:
+      self.maskSelector.enabled = False
+    else:
+      self.maskSelector.enabled = True
+      
       
   def onAutoUpdate(self):
     if self.autoUpdateCheckBox.checked == True:
@@ -410,10 +443,12 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
           refNode = self.referencePhaseSelector.currentNode()
           refNode.RemoveObserver(self.tag)
         self.referencePhaseSelector.enabled = True
-  
+
+        
   def onModelRefImageModifiedEvent(self, caller, event):
     self.onApplyButtonSingle()
- 
+
+    
   def onApplyButtonSingle(self):
     logic = PRFThermometryLogic()
 
@@ -438,6 +473,12 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     else:
       param['upperThreshold']         = False
       param['lowerThreshold']         = False
+
+    if self.simpleMaskingFlagCheckBox.checked == 1:
+      param['simpleMask']        = 'disk'
+      param['simpleMask.radius'] = self.radiusSpinBox.value
+    else:
+      param['simpleMask']        = None
 
       
     logic.runSingleFrame(param)
@@ -496,6 +537,28 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
       return False
     return True
 
+
+  def generateDiskMask(self, refImage, center=[0.5,0.5,0.5], radius=0.5):
+
+    refImageArray = sitk.GetArrayFromImage(refImage)
+    dims = refImageArray.shape
+    maxDim = numpy.double(numpy.max(dims))
+    r = maxDim * radius
+    
+    cx = dims[0] * center[0]
+    cy = dims[1] * center[1]
+    cz = dims[2] * center[2]
+    y, x, z = numpy.ogrid[-cx:dims[0]-cx, -cy:dims[1]-cy, -cz:dims[2]-cz]
+    mask = x*x + y*y + z*z <= r*r
+    voxels = numpy.zeros((dims[0], dims[1], dims[2]))
+    voxels[mask] = 1
+    
+    maskImage = sitk.GetImageFromArray(voxels)
+    maskImage.CopyInformation(refImage) 
+    
+    return maskImage
+
+  
   def runSingleFrame(self, param): 
     """
     Run the actual algorithm
@@ -536,12 +599,19 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
       
     imageBaseline  = sitk.Cast(sitkUtils.PullVolumeFromSlicer(baselinePhaseVolumeNode), sitk.sitkFloat64)
     imageReference  = sitk.Cast(sitkUtils.PullVolumeFromSlicer(referencePhaseVolumeNode), sitk.sitkFloat64)
+    
     mask = None
-    if param['maskVolumeNode']:
+    
+    if param['simpleMask'] == 'disk':
+      simpleMaskRadius         = param['simpleMask.radius'] 
+      mask = self.generateDiskMask(imageBaseline, radius=simpleMaskRadius)
+      imageBaseline = imageBaseline * mask
+      imageReference = imageReference * mask
+    elif param['maskVolumeNode']:
       mask = sitk.Cast(sitkUtils.PullVolumeFromSlicer(maskVolumeNode), sitk.sitkFloat64)
       imageBaseline = imageBaseline * mask
       imageReference = imageReference * mask
-
+    
     if tempMapVolumeNode:
 
       self.phaseDiff = None
@@ -566,14 +636,15 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
         # by pi*N where N = -2, -1, ... ,2 and check the difference between the baseline and reference images.
         stat = sitk.StatisticsImageFilter()
         meanDiffList = numpy.array([])
-        nList = list(range(-2,3))
+        nList = list(range(-4,4))
         for n in nList:
-          phaseShift = numpy.pi * n
+          phaseShift = numpy.pi * n 
           diffImage = imageReferencePhase + phaseShift - imageBaselinePhase
           stat.Execute(diffImage)
           meanDiffList = numpy.append(meanDiffList, numpy.abs(stat.GetMean()))
         
         minIndex = numpy.argmin(meanDiffList)
+        print('minIndex = ' + str(minIndex))
         phaseShift = numpy.pi * nList[minIndex]
         imageReferencePhase = imageReferencePhase + phaseShift
         
