@@ -61,22 +61,6 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     ioCommonFormLayout = qt.QFormLayout()
     ioFormLayout.addLayout(ioCommonFormLayout)
 
-    ##
-    ## true phase point
-    ##
-    #self.truePhasePointSelector = slicer.qMRMLNodeComboBox()
-    #self.truePhasePointSelector.nodeTypes = ( ("vtkMRMLMarkupsFiducialNode"), "" )
-    #self.truePhasePointSelector.selectNodeUponCreation = True
-    #self.truePhasePointSelector.addEnabled = True
-    #self.truePhasePointSelector.removeEnabled = True
-    #self.truePhasePointSelector.noneEnabled = True
-    #self.truePhasePointSelector.renameEnabled = True
-    #self.truePhasePointSelector.showHidden = False
-    #self.truePhasePointSelector.showChildNodeTypes = False
-    #self.truePhasePointSelector.setMRMLScene( slicer.mrmlScene )
-    #self.truePhasePointSelector.setToolTip( "Markups node that defines a true phase point." )
-    #ioCommonFormLayout.addRow("True Phase Point: ", self.truePhasePointSelector)
-
     # --------------------
     # Single Frame
     #
@@ -230,6 +214,78 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     self.radiusSpinBox.setValue(0.8)
     self.radiusSpinBox.setToolTip("Radius of the disk mask")
     maskingFormLayout.addRow("Radius: ", self.radiusSpinBox)
+
+
+    # --------------------------------------------------
+    # PRF Parameters Area
+    # --------------------------------------------------
+    #
+    prfParametersCollapsibleButton = ctk.ctkCollapsibleButton()
+    prfParametersCollapsibleButton.text = "PRF Parameters"
+    self.layout.addWidget(prfParametersCollapsibleButton)
+
+    prfParametersFormLayout = qt.QFormLayout(prfParametersCollapsibleButton)
+    
+    #
+    # Temperature coefficient (alpha)
+    #
+    self.alphaSpinBox = qt.QDoubleSpinBox()
+    self.alphaSpinBox.objectName = 'alphaSpinBox'
+    self.alphaSpinBox.setMaximum(100.0)
+    self.alphaSpinBox.setMinimum(-100.0)
+    self.alphaSpinBox.setDecimals(8)
+    self.alphaSpinBox.setValue(-0.01)
+    self.alphaSpinBox.setToolTip("Temperature coefficient (ppm/deg C)")
+    prfParametersFormLayout.addRow("alpha (ppm/deg C): ", self.alphaSpinBox)
+
+    #
+    # Gyromagnetic ratio (gamma)
+    #
+    self.gammaSpinBox = qt.QDoubleSpinBox()
+    self.gammaSpinBox.objectName = 'gammaSpinBox'
+    self.gammaSpinBox.setMaximum(100.0)
+    self.gammaSpinBox.setMinimum(-100.0)
+    self.gammaSpinBox.setDecimals(8)
+    self.gammaSpinBox.setValue(42.576)
+    self.gammaSpinBox.setToolTip("Gyromagnetic ratio / PI (rad / s T) (Default is proton )")
+    prfParametersFormLayout.addRow("gamma (rad / s T): ", self.gammaSpinBox)
+
+    #
+    # Field strength (B0)
+    #
+    self.B0SpinBox = qt.QDoubleSpinBox()
+    self.B0SpinBox.objectName = 'B0SpinBox'
+    self.B0SpinBox.setMaximum(20.0)
+    self.B0SpinBox.setMinimum(0.0)
+    self.B0SpinBox.setDecimals(8)
+    self.B0SpinBox.setValue(3.0)
+    self.B0SpinBox.setToolTip("Static field strength (Tesla)")
+    prfParametersFormLayout.addRow("B0 (Tesla): ", self.B0SpinBox)
+
+    #
+    # Echo time (TE)
+    #
+    self.TESpinBox = qt.QDoubleSpinBox()
+    self.TESpinBox.objectName = 'TESpinBox'
+    self.TESpinBox.setMaximum(10.0)
+    self.TESpinBox.setMinimum(0.0)
+    self.TESpinBox.setDecimals(8)
+    self.TESpinBox.setValue(0.01)
+    self.TESpinBox.setToolTip("Echo time (s)")
+    prfParametersFormLayout.addRow("TE (s): ", self.TESpinBox)
+
+    #
+    # Body temperature (BT)
+    #
+    self.BTSpinBox = qt.QDoubleSpinBox()
+    self.BTSpinBox.objectName = 'BTSpinBox'
+    self.BTSpinBox.setMaximum(100.0)
+    self.BTSpinBox.setMinimum(0.0)
+    self.BTSpinBox.setDecimals(8)
+    self.BTSpinBox.setValue(37.0)
+    self.BTSpinBox.setToolTip("Body temperature (Deg C)")
+    prfParametersFormLayout.addRow("BT (Deg C): ", self.BTSpinBox)
+
     
     # --------------------------------------------------
     # Parameters Area
@@ -245,70 +301,32 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     # Check box to apply phase unwrapping
     #
     self.phaseUnwrappingFlagCheckBox = qt.QCheckBox()
-    self.phaseUnwrappingFlagCheckBox.checked = 1
-    self.phaseUnwrappingFlagCheckBox.setToolTip("If checked, use phase unwrapping.")
-    parametersFormLayout.addRow("Use phase unwrapping", self.phaseUnwrappingFlagCheckBox)
+    self.phaseUnwrappingFlagCheckBox.checked = 0
+    self.phaseUnwrappingFlagCheckBox.setToolTip("If checked, use phase unwrapping on the raw input images.")
+    parametersFormLayout.addRow("Phase unwrapping on raw input", self.phaseUnwrappingFlagCheckBox)
+    
+    self.phaseUnwrappingPostFlagCheckBox = qt.QCheckBox()
+    self.phaseUnwrappingPostFlagCheckBox.checked = 1
+    self.phaseUnwrappingPostFlagCheckBox.setToolTip("If checked, use phase unwrapping after computing the phase shift.")
+    parametersFormLayout.addRow("Phase unwrapping after subtraction", self.phaseUnwrappingPostFlagCheckBox)
+
+    self.complexFlagCheckBox = qt.QCheckBox()
+    self.complexFlagCheckBox.checked = 1
+    self.complexFlagCheckBox.setToolTip("If checked, use complex values to subtract phase.")
+    parametersFormLayout.addRow("Use complex values", self.complexFlagCheckBox)
 
     #
-    # Temperature coefficient (alpha)
+    # Phase range (when "Use complex values" is ON)
     #
-    self.alphaSpinBox = qt.QDoubleSpinBox()
-    self.alphaSpinBox.objectName = 'alphaSpinBox'
-    self.alphaSpinBox.setMaximum(100.0)
-    self.alphaSpinBox.setMinimum(-100.0)
-    self.alphaSpinBox.setDecimals(8)
-    self.alphaSpinBox.setValue(-0.01)
-    self.alphaSpinBox.setToolTip("Temperature coefficient (ppm/deg C)")
-    parametersFormLayout.addRow("alpha: ", self.alphaSpinBox)
-
-    #
-    # Gyromagnetic ratio (gamma)
-    #
-    self.gammaSpinBox = qt.QDoubleSpinBox()
-    self.gammaSpinBox.objectName = 'gammaSpinBox'
-    self.gammaSpinBox.setMaximum(100.0)
-    self.gammaSpinBox.setMinimum(-100.0)
-    self.gammaSpinBox.setDecimals(8)
-    self.gammaSpinBox.setValue(42.576)
-    self.gammaSpinBox.setToolTip("Gyromagnetic ratio / PI (rad / s T) (Default is proton )")
-    parametersFormLayout.addRow("gamma: ", self.gammaSpinBox)
-
-    #
-    # Field strength (B0)
-    #
-    self.B0SpinBox = qt.QDoubleSpinBox()
-    self.B0SpinBox.objectName = 'B0SpinBox'
-    self.B0SpinBox.setMaximum(20.0)
-    self.B0SpinBox.setMinimum(0.0)
-    self.B0SpinBox.setDecimals(8)
-    self.B0SpinBox.setValue(3.0)
-    self.B0SpinBox.setToolTip("Static field strength (Tesla)")
-    parametersFormLayout.addRow("B0: ", self.B0SpinBox)
-
-    #
-    # Echo time (TE)
-    #
-    self.TESpinBox = qt.QDoubleSpinBox()
-    self.TESpinBox.objectName = 'TESpinBox'
-    self.TESpinBox.setMaximum(10.0)
-    self.TESpinBox.setMinimum(0.0)
-    self.TESpinBox.setDecimals(8)
-    self.TESpinBox.setValue(0.01)
-    self.TESpinBox.setToolTip("Echo time (s)")
-    parametersFormLayout.addRow("TE: ", self.TESpinBox)
-
-    #
-    # Body temperature (BT)
-    #
-    self.BTSpinBox = qt.QDoubleSpinBox()
-    self.BTSpinBox.objectName = 'BTSpinBox'
-    self.BTSpinBox.setMaximum(100.0)
-    self.BTSpinBox.setMinimum(0.0)
-    self.BTSpinBox.setDecimals(8)
-    self.BTSpinBox.setValue(37.0)
-    self.BTSpinBox.setToolTip("Echo time (Deg C)")
-    parametersFormLayout.addRow("BT: ", self.BTSpinBox)
-
+    self.phaseRangeSpinBox = qt.QDoubleSpinBox()
+    self.phaseRangeSpinBox.objectName = 'alphaSpinBox'
+    self.phaseRangeSpinBox.setMaximum(180.0)
+    self.phaseRangeSpinBox.setMinimum(-180.0)
+    self.phaseRangeSpinBox.setDecimals(2)
+    self.phaseRangeSpinBox.setValue(30.0)
+    self.phaseRangeSpinBox.setToolTip("Specify the phase range in degrees. The normal phase range for temperature mapping is [-360 deg, 0 deg]. If '30' is speicified, the range is shifted by 30 degrees (i.e., [-330deg, 30deg]). The shift will allow visualizing negative temperature changes even when complex values are used to calcluate the phase shift.")
+    parametersFormLayout.addRow("Phase range shift (deg): ", self.phaseRangeSpinBox)
+    
     #
     # Check box to use threshold
     #
@@ -327,7 +345,7 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     self.scaleRangeMaxSpinBox.setDecimals(4)
     self.scaleRangeMaxSpinBox.setValue(85.0)
     self.scaleRangeMaxSpinBox.setToolTip("Maximum value for the temperature color scale.")
-    parametersFormLayout.addRow("Max. scale (deg): ", self.scaleRangeMaxSpinBox)
+    parametersFormLayout.addRow("Max. scale (deg C): ", self.scaleRangeMaxSpinBox)
 
     #
     # Lower threshold - We set threshold value to limit the range of intensity 
@@ -339,7 +357,7 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     self.scaleRangeMinSpinBox.setDecimals(4)
     self.scaleRangeMinSpinBox.setValue(35.0)
     self.scaleRangeMinSpinBox.setToolTip("Minimum value for the temperature color scale")
-    parametersFormLayout.addRow("Min. scale (deg): ", self.scaleRangeMinSpinBox)
+    parametersFormLayout.addRow("Min. scale (deg C): ", self.scaleRangeMinSpinBox)
 
     #
     # Upper threshold - We set threshold value to limit the range of intensity 
@@ -377,6 +395,7 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     parametersFormLayout.addRow("Automatic Update", self.autoUpdateCheckBox)
 
     # connections
+    
     self.applyButtonSingle.connect('clicked(bool)', self.onApplyButtonSingle)
     self.applyButtonMulti.connect("clicked(bool)", self.onApplyButtonMulti)
         
@@ -385,6 +404,8 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     self.tempMapSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelectSingle)
     self.multiFrameReferencePhaseSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelectMulti)
     self.multiFrameTempMapSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelectMulti)
+
+    self.complexFlagCheckBox.connect('toggled(bool)', self.onComplexFlag)
     
     self.useThresholdFlagCheckBox.connect('toggled(bool)', self.onUseThreshold)
     self.autoUpdateCheckBox.connect('toggled(bool)', self.onAutoUpdate)
@@ -412,6 +433,12 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
   def onSelectMulti(self):
     self.applyButtonMulti.enabled = self.multiFrameReferencePhaseSelector.currentNode() and self.multiFrameTempMapSelector.currentNode()
 
+
+  def onComplexFlag(self):
+    if self.complexFlagCheckBox.checked == True:
+      self.phaseRangeSpinBox.enabled = True
+    else:
+      self.phaseRangeSpinBox.enabled = False
     
   def onUseThreshold(self):
     if self.useThresholdFlagCheckBox.checked == True:
@@ -454,11 +481,13 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
 
     param = {}
     param['usePhaseUnwrapping']       = self.phaseUnwrappingFlagCheckBox.checked
+    param['usePhaseUnwrappingPost']   = self.phaseUnwrappingPostFlagCheckBox.checked
+    param['useComplex']               = self.complexFlagCheckBox.checked
+    param['phaseRangeShiftDeg']       = self.phaseRangeSpinBox.value
     param['baselinePhaseVolumeNode']  = self.baselinePhaseSelector.currentNode()
     param['referencePhaseVolumeNode'] = self.referencePhaseSelector.currentNode()
     param['maskVolumeNode']           = self.maskSelector.currentNode()
     param['tempMapVolumeNode']        = self.tempMapSelector.currentNode()
-    #param['truePhasePointNode']       = self.truePhasePointSelector.currentNode()
     param['alpha']                    = self.alphaSpinBox.value
     param['gamma']                    = self.gammaSpinBox.value
     param['B0']                       = self.B0SpinBox.value
@@ -493,6 +522,9 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     param['referencePhaseSequenceNode'] = self.multiFrameReferencePhaseSelector.currentNode()
     param['tempMapSequenceNode']        = self.multiFrameTempMapSelector.currentNode()
     param['usePhaseUnwrapping']       = self.phaseUnwrappingFlagCheckBox.checked
+    param['usePhaseUnwrappingPost']   = self.phaseUnwrappingPostFlagCheckBox.checked
+    param['useComplex']               = self.complexFlagCheckBox.checked
+    param['phaseRangeShiftDeg']       = self.phaseRangeSpinBox.value
     #param['truePhasePointNode']       = self.truePhasePointSelector.currentNode()
     param['alpha']                    = self.alphaSpinBox.value
     param['gamma']                    = self.gammaSpinBox.value
@@ -564,6 +596,9 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
     Run the actual algorithm
     """
     usePhaseUnwrapping       = param['usePhaseUnwrapping']
+    usePhaseUnwrappingPost   = param['usePhaseUnwrappingPost']
+    useComplex               = param['useComplex']
+    phaseRangeShiftDeg       = param['phaseRangeShiftDeg']
     baselinePhaseVolumeNode  = param['baselinePhaseVolumeNode']
     referencePhaseVolumeNode = param['referencePhaseVolumeNode']
     maskVolumeNode           = param['maskVolumeNode']
@@ -578,6 +613,9 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
     colorScaleMin            = param['colorScaleMin']
     upperThreshold           = param['upperThreshold']
     lowerThreshold           = param['lowerThreshold']
+
+    # Convert the phase range shift from degree to radian
+    phaseRangeShift = numpy.pi * phaseRangeShiftDeg/180.0
     
     if not self.isValidInputOutputData(baselinePhaseVolumeNode, referencePhaseVolumeNode):
       slicer.util.errorDisplay('Input volume is the same as output volume. Choose a different output volume.')
@@ -625,14 +663,15 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
         print('imageBaseline*numpy.pi/4096.0')
         imageBaselinePhase = imageBaseline*numpy.pi/4096.0
         imageReferencePhase = imageReference*numpy.pi/4096.0
-      
+
+      # Phase unwrapping on the raw input images
       if usePhaseUnwrapping == True:
         print('usePhaseUnwrapping')
         imageBaselinePhase  = self.unwrap(imageBaselinePhase)
         imageReferencePhase = self.unwrap(imageReferencePhase)
-        
+
         # Match the phases
-        # Phase unwrapping often end up shifting the entire phase map by pi*N. Try shifting the reference phase map
+        # Phase unwrapping often ends up shifting the entire phase map by pi*N. Try shifting the reference phase map
         # by pi*N where N = -2, -1, ... ,2 and check the difference between the baseline and reference images.
         stat = sitk.StatisticsImageFilter()
         meanDiffList = numpy.array([])
@@ -647,10 +686,35 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
         print('minIndex = ' + str(minIndex))
         phaseShift = numpy.pi * nList[minIndex]
         imageReferencePhase = imageReferencePhase + phaseShift
-        
-          
-      self.phaseDiff = imageReferencePhase - imageBaselinePhase
 
+      # Phase shift can be determined by either subtracting the phase values or
+      # calculating the rotation in the complex space
+      if useComplex == True:
+        # Convert the phase images to complex images (as numpy arrays)
+        arrayBaseline = sitk.GetArrayFromImage(imageBaselinePhase)
+        arrayBaselineComplex = numpy.cos(arrayBaseline) + numpy.sin(arrayBaseline) * 1.0j
+        arrayReference = sitk.GetArrayFromImage(imageReferencePhase)
+        arrayReferenceComplex = numpy.cos(arrayReference) + numpy.sin(arrayReference) * 1.0j
+        
+        arrayPhaseDiffComplex = arrayReferenceComplex / arrayBaselineComplex
+        arrayPhaseDiff = numpy.angle(arrayPhaseDiffComplex)
+        
+        # Change the range from [-pi, pi] to [-2pi+numpy.pi/4, numpy.pi/4] (allow some temperature decrease)
+        arrayPhaseDiff[arrayPhaseDiff>phaseRangeShift] -= 2*numpy.pi
+        
+        self.phaseDiff = sitk.GetImageFromArray(arrayPhaseDiff)
+        self.phaseDiff.SetOrigin(imageBaseline.GetOrigin())
+        self.phaseDiff.SetSpacing(imageBaseline.GetSpacing())
+        self.phaseDiff.SetDirection(imageBaseline.GetDirection())
+        
+      else:
+        self.phaseDiff = imageReferencePhase - imageBaselinePhase        
+      
+      if usePhaseUnwrappingPost == True:
+        print('usePhaseUnwrappingPost')
+        self.phaseDiff  = self.unwrap(self.phaseDiff)
+        
+      self.phaseDiff = self.phaseDiff
       print("(alpha, gamma, B0, TE, TE) = (%f, %f, %f, %f, %f)" % (alpha, gamma, B0, TE, BT))
       imageTemp = self.phaseDiff / (alpha * 2.0 * numpy.pi * gamma * B0 * TE) + BT
         
