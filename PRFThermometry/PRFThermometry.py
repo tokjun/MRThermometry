@@ -300,6 +300,14 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     #
     # Check box to apply phase unwrapping
     #
+    self.dispInterpFlagCheckBox = qt.QCheckBox()
+    self.dispInterpFlagCheckBox.checked = 0
+    self.dispInterpFlagCheckBox.setToolTip("If checked, voxels will be interpolated for display. ")
+    parametersFormLayout.addRow("Display interpolation", self.dispInterpFlagCheckBox)
+
+    #
+    # Check box to apply phase unwrapping
+    #
     self.phaseUnwrappingFlagCheckBox = qt.QCheckBox()
     self.phaseUnwrappingFlagCheckBox.checked = 0
     self.phaseUnwrappingFlagCheckBox.setToolTip("If checked, use phase unwrapping on the raw input images.")
@@ -383,9 +391,6 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     self.lowerThresholdSpinBox.setToolTip("Lower threshold for the output")
     parametersFormLayout.addRow("Lower Threshold (deg): ", self.lowerThresholdSpinBox)
 
-
-
-    
     #
     # Check for automatic update
     #
@@ -480,6 +485,7 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     logic = PRFThermometryLogic()
 
     param = {}
+    param['displayInterpolation']     = self.dispInterpFlagCheckBox.checked
     param['usePhaseUnwrapping']       = self.phaseUnwrappingFlagCheckBox.checked
     param['usePhaseUnwrappingPost']   = self.phaseUnwrappingPostFlagCheckBox.checked
     param['useComplex']               = self.complexFlagCheckBox.checked
@@ -521,6 +527,7 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     param['maskVolumeNode']           = self.maskSelector.currentNode()
     param['referencePhaseSequenceNode'] = self.multiFrameReferencePhaseSelector.currentNode()
     param['tempMapSequenceNode']        = self.multiFrameTempMapSelector.currentNode()
+    param['displayInterpolation']     = self.dispInterpFlagCheckBox.checked    
     param['usePhaseUnwrapping']       = self.phaseUnwrappingFlagCheckBox.checked
     param['usePhaseUnwrappingPost']   = self.phaseUnwrappingPostFlagCheckBox.checked
     param['useComplex']               = self.complexFlagCheckBox.checked
@@ -595,6 +602,8 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
     """
     Run the actual algorithm
     """
+
+    displayInterpolation     = param['displayInterpolation']
     usePhaseUnwrapping       = param['usePhaseUnwrapping']
     usePhaseUnwrappingPost   = param['usePhaseUnwrappingPost']
     useComplex               = param['useComplex']
@@ -729,7 +738,7 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
         dnode = slicer.mrmlScene.CreateNodeByClass('vtkMRMLScalarVolumeDisplayNode')
         slicer.mrmlScene.AddNode(dnode)
         tempMapVolumeNode.SetAndObserveDisplayNodeID(dnode.GetID())
-        
+
       dnode.SetAndObserveColorNodeID('vtkMRMLColorTableNodeFileColdToHotRainbow.txt')
       dnode.SetWindowLevelLocked(0)
       dnode.SetAutoWindowLevel(0)
@@ -737,6 +746,11 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
 
       colorLegendDisplayNode = slicer.modules.colors.logic().AddDefaultColorLegendDisplayNode(tempMapVolumeNode)
       colorLegendDisplayNode.VisibilityOn()
+
+      if displayInterpolation == True:
+        dnode.SetInterpolate(1)
+      else:
+        dnode.SetInterpolate(0)
 
     logging.info('Processing completed')
 
