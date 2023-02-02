@@ -115,7 +115,70 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     self.maskSelector.setMRMLScene( slicer.mrmlScene )
     self.maskSelector.setToolTip( "Select a mask volume." )
     singleFrameFormLayout.addRow("Mask Volume: ", self.maskSelector)
-    
+
+
+    scBoxLayout = qt.QHBoxLayout()
+    scButtonGroup = qt.QButtonGroup()
+    self.scOffRadioButton = qt.QRadioButton('OFF')
+    self.scOffRadioButton.setToolTip( "No susceptibility correction." )
+    self.scOffRadioButton.checked = 1
+    self.scManualRadioButton = qt.QRadioButton('Manual')
+    self.scManualRadioButton.setToolTip( "Susceptibility correction using a object label map." )
+    self.scAutoRadioButton = qt.QRadioButton('Auto')
+    self.scManualRadioButton.setToolTip( "Susceptibility correction using a object label map generated from magnitude images." )
+    scBoxLayout.addWidget(self.scOffRadioButton)
+    scBoxLayout.addWidget(self.scManualRadioButton)
+    scBoxLayout.addWidget(self.scAutoRadioButton)
+    scButtonGroup.addButton(self.scOffRadioButton)
+    scButtonGroup.addButton(self.scAutoRadioButton)
+    scButtonGroup.addButton(self.scManualRadioButton)
+    singleFrameFormLayout.addRow('Susc. Correction: ', scBoxLayout)
+
+    #
+    # Object label for susceptibility correction
+    #
+    self.objectLabelSelector = slicer.qMRMLNodeComboBox()
+    self.objectLabelSelector.nodeTypes = ( ("vtkMRMLLabelMapVolumeNode"), "" )
+    self.objectLabelSelector.selectNodeUponCreation = True
+    self.objectLabelSelector.addEnabled = False
+    self.objectLabelSelector.removeEnabled = False
+    self.objectLabelSelector.noneEnabled = True
+    self.objectLabelSelector.showHidden = False
+    self.objectLabelSelector.showChildNodeTypes = False
+    self.objectLabelSelector.setMRMLScene( slicer.mrmlScene )
+    self.objectLabelSelector.setToolTip( "Select an object label for suscptibility correction." )
+    singleFrameFormLayout.addRow("Object Label: ", self.objectLabelSelector)
+
+    #
+    # Object magnitude image (baseline) for susceptibility compensation
+    #
+    self.objectBaselineImageSelector = slicer.qMRMLNodeComboBox()
+    self.objectBaselineImageSelector.nodeTypes = ( ("vtkMRMLScalarVolumeNode"), "" )
+    self.objectBaselineImageSelector.selectNodeUponCreation = True
+    self.objectBaselineImageSelector.addEnabled = False
+    self.objectBaselineImageSelector.removeEnabled = False
+    self.objectBaselineImageSelector.noneEnabled = True
+    self.objectBaselineImageSelector.showHidden = False
+    self.objectBaselineImageSelector.showChildNodeTypes = False
+    self.objectBaselineImageSelector.setMRMLScene( slicer.mrmlScene )
+    self.objectBaselineImageSelector.setToolTip( "Select a object baseline magnitude image." )
+    singleFrameFormLayout.addRow("Object Baseline Image: ", self.objectBaselineImageSelector)
+
+    #
+    # Object magnitude image (reference) for susceptibility compensation
+    #
+    self.objectReferenceImageSelector = slicer.qMRMLNodeComboBox()
+    self.objectReferenceImageSelector.nodeTypes = ( ("vtkMRMLScalarVolumeNode"), "" )
+    self.objectReferenceImageSelector.selectNodeUponCreation = True
+    self.objectReferenceImageSelector.addEnabled = False
+    self.objectReferenceImageSelector.removeEnabled = False
+    self.objectReferenceImageSelector.noneEnabled = True
+    self.objectReferenceImageSelector.showHidden = False
+    self.objectReferenceImageSelector.showChildNodeTypes = False
+    self.objectReferenceImageSelector.setMRMLScene( slicer.mrmlScene )
+    self.objectReferenceImageSelector.setToolTip( "Select a object reference magnitude image." )
+    singleFrameFormLayout.addRow("Object Reference Image: ", self.objectReferenceImageSelector)
+
     #
     # tempMap volume selector
     #
@@ -286,7 +349,30 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     self.BTSpinBox.setToolTip("Body temperature (Deg C)")
     prfParametersFormLayout.addRow("BT (Deg C): ", self.BTSpinBox)
 
-    
+
+    # --------------------------------------------------
+    # Susceptibility Correction Parameters Area
+    # --------------------------------------------------
+    #
+    scParametersCollapsibleButton = ctk.ctkCollapsibleButton()
+    scParametersCollapsibleButton.text = "Susceptibility Correction Parameters"
+    self.layout.addWidget(scParametersCollapsibleButton)
+
+    scParametersFormLayout = qt.QFormLayout(scParametersCollapsibleButton)
+
+    #
+    # Delta Chi
+    #
+    self.deltaChiSpinBox = qt.QDoubleSpinBox()
+    self.deltaChiSpinBox.objectName = 'gammaSpinBox'
+    self.deltaChiSpinBox.setMaximum(100.0)
+    self.deltaChiSpinBox.setMinimum(0.0)
+    self.deltaChiSpinBox.setDecimals(8)
+    self.deltaChiSpinBox.setValue(3.2)
+    self.deltaChiSpinBox.setToolTip("Delta Chi (Constant susceptibility difference in the object region)")
+    scParametersFormLayout.addRow("Delta Chi (ppm): ", self.deltaChiSpinBox)
+
+
     # --------------------------------------------------
     # Parameters Area
     # --------------------------------------------------
@@ -303,7 +389,7 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     self.dispInterpFlagCheckBox = qt.QCheckBox()
     self.dispInterpFlagCheckBox.checked = 0
     self.dispInterpFlagCheckBox.setToolTip("If checked, voxels will be interpolated for display. ")
-    parametersFormLayout.addRow("Display interpolation", self.dispInterpFlagCheckBox)
+    parametersFormLayout.addRow("Display interpolation: ", self.dispInterpFlagCheckBox)
 
     #
     # Check box to apply phase unwrapping
@@ -311,17 +397,17 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     self.phaseUnwrappingFlagCheckBox = qt.QCheckBox()
     self.phaseUnwrappingFlagCheckBox.checked = 0
     self.phaseUnwrappingFlagCheckBox.setToolTip("If checked, use phase unwrapping on the raw input images.")
-    parametersFormLayout.addRow("Phase unwrapping on raw input", self.phaseUnwrappingFlagCheckBox)
+    parametersFormLayout.addRow("Phase unwrapping on raw input: ", self.phaseUnwrappingFlagCheckBox)
     
     self.phaseUnwrappingPostFlagCheckBox = qt.QCheckBox()
     self.phaseUnwrappingPostFlagCheckBox.checked = 1
     self.phaseUnwrappingPostFlagCheckBox.setToolTip("If checked, use phase unwrapping after computing the phase shift.")
-    parametersFormLayout.addRow("Phase unwrapping after subtraction", self.phaseUnwrappingPostFlagCheckBox)
+    parametersFormLayout.addRow("Phase unwrapping after subtraction: ", self.phaseUnwrappingPostFlagCheckBox)
 
     self.complexFlagCheckBox = qt.QCheckBox()
     self.complexFlagCheckBox.checked = 1
     self.complexFlagCheckBox.setToolTip("If checked, use complex values to subtract phase.")
-    parametersFormLayout.addRow("Use complex values", self.complexFlagCheckBox)
+    parametersFormLayout.addRow("Use complex values: ", self.complexFlagCheckBox)
 
     #
     # Phase range (when "Use complex values" is ON)
@@ -396,14 +482,18 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     #
     self.autoUpdateCheckBox = qt.QCheckBox()
     self.autoUpdateCheckBox.checked = 1
-    self.autoUpdateCheckBox.setToolTip("Automatic Update")
+    self.autoUpdateCheckBox.setToolTip("Automatic Update: ")
     parametersFormLayout.addRow("Automatic Update", self.autoUpdateCheckBox)
 
     # connections
     
     self.applyButtonSingle.connect('clicked(bool)', self.onApplyButtonSingle)
     self.applyButtonMulti.connect("clicked(bool)", self.onApplyButtonMulti)
-        
+
+    self.scOffRadioButton.connect('clicked(bool)', self.onScChange)
+    self.scManualRadioButton.connect('clicked(bool)', self.onScChange)
+    self.scAutoRadioButton.connect('clicked(bool)', self.onScChange)
+
     self.baselinePhaseSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelectSingle)
     self.referencePhaseSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelectSingle)
     self.tempMapSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelectSingle)
@@ -484,6 +574,12 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
   def onApplyButtonSingle(self):
     logic = PRFThermometryLogic()
 
+    suscCorrMethod = 'Off'
+    if self.scAutoRadioButton.checked:
+      suscCorrMethod = 'Auto'
+    elif self.scManualRadioButton.checked:
+      suscCorrMethod = 'Manual'
+
     param = {}
     param['displayInterpolation']     = self.dispInterpFlagCheckBox.checked
     param['usePhaseUnwrapping']       = self.phaseUnwrappingFlagCheckBox.checked
@@ -501,6 +597,11 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     param['BT']                       = self.BTSpinBox.value
     param['colorScaleMax']            = self.scaleRangeMaxSpinBox.value
     param['colorScaleMin']            = self.scaleRangeMinSpinBox.value
+    param['suscCorrMethod']           = suscCorrMethod
+    param['suscCorrObjectLabelNode']  = self.objectLabelSelector.currentNode()
+    param['suscCorrBaselineImageNode']= self.objectBaselineImageSelector.currentNode()
+    param['suscCorrReferenceImageNode']= self.objectReferenceImageSelector.currentNode()
+    param['deltaChi']                 = self.deltaChiSpinBox.value
     
     if self.useThresholdFlagCheckBox.checked == True:
       param['upperThreshold']         = self.upperThresholdSpinBox.value
@@ -522,6 +623,12 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
   def onApplyButtonMulti(self):
     logic = PRFThermometryLogic()
 
+    suscCorrMethod = 'off'
+    if self.scAutoRadioButton.checked:
+      suscCorrMethod = 'auto'
+    elif self.scManualRadioButton.checked:
+      suscCorrMethod = 'manual'
+
     param = {}
     param['baselinePhaseVolumeNode']  = self.baselinePhaseSelector.currentNode()
     param['maskVolumeNode']           = self.maskSelector.currentNode()
@@ -540,7 +647,15 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     param['BT']                       = self.BTSpinBox.value
     param['colorScaleMax']            = self.scaleRangeMaxSpinBox.value
     param['colorScaleMin']            = self.scaleRangeMinSpinBox.value
-    
+
+    # TODO: Susceptibility correction hasn't been implemented for multi-frame mapping.
+    param['suscCorrMethod']            = suscCorrMethod
+    param['suscCorrObjectLabelNode']   = None
+    param['suscCorrBaselineImageNode'] = None
+    param['suscCorrReferenceImageNode'] = None
+
+    param['deltaChi']                 = self.deltaChiSpinBox.value
+
     if self.useThresholdFlagCheckBox.checked == True:
       param['upperThreshold']         = self.upperThresholdSpinBox.value
       param['lowerThreshold']         = self.lowerThresholdSpinBox.value
@@ -551,7 +666,24 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     logic.runMultiFrame(param)
 
 
-    
+  def onScChange(self):
+    #
+    # Change susceptibility correction method
+    #
+    if self.scOffRadioButton.checked:
+      self.objectLabelSelector.enabled = 0
+      self.objectBaselineImageSelector.enabled = 0
+      self.objectReferenceImageSelector.enabled = 0
+    elif self.scManualRadioButton:
+      self.objectLabelSelector.enabled = 1
+      self.objectBaselineImageSelector.enabled = 0
+      self.objectReferenceImageSelector.enabled = 0
+    else: # if self.scAutoRadioButton:
+      self.objectLabelSelector.enabled = 0
+      self.objectBaselineImageSelector.enabled = 1
+      self.objectReferenceImageSelector.enabled = 1
+
+
   def onReload(self, moduleName="PRFThermometry"):
     # Generic reload method for any scripted module.
     # ModuleWizard will subsitute correct default moduleName.
@@ -623,6 +755,13 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
     upperThreshold           = param['upperThreshold']
     lowerThreshold           = param['lowerThreshold']
 
+    suscCorrMethod           = param['suscCorrMethod']
+    suscCorrObjectLabelNode   = param['suscCorrObjectLabelNode']
+    suscCorrBaselineImageNode = param['suscCorrBaselineImageNode']
+    suscCorrReferenceImageNode= param['suscCorrReferenceImageNode']
+    deltaChi                 = param['deltaChi']
+
+
     # Convert the phase range shift from degree to radian
     phaseRangeShift = numpy.pi * phaseRangeShiftDeg/180.0
     
@@ -657,7 +796,7 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
     elif param['maskVolumeNode']:
       mask = sitk.Cast(sitkUtils.PullVolumeFromSlicer(maskVolumeNode), sitk.sitkFloat64)
       imageBaseline = imageBaseline * mask
-      imageReference = imageReference * mask
+      imageRefeprence = imageReference * mask
     
     if tempMapVolumeNode:
 
@@ -723,7 +862,20 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
         print('usePhaseUnwrappingPost')
         self.phaseDiff  = self.unwrap(self.phaseDiff)
         
-      self.phaseDiff = self.phaseDiff
+      #self.phaseDiff = self.phaseDiff
+      #
+      # Susceptibility correction
+      if suscCorrMethod == 'manual':
+        labelImage = sitk.Cast(sitkUtils.PullVolumeFromSlicer(suscCorrObjectLabelNode), sitk.sitkInt16)
+        deltaPhase = self.generateSusceptibilityMap(labelImage, param)
+        self.phaseDiff = self.phaseDiff - deltaPhase
+      elif suscCorrMethod == 'auto':
+        baselineImage = sitk.Cast(sitkUtils.PullVolumeFromSlicer(suscCorrBaselineImageNode), sitk.sitkInt16)
+        referenceImage = sitk.Cast(sitkUtils.PullVolumeFromSlicer(suscCorrReferenceImageNode), sitk.sitkInt16)
+        labelImage = self.segmentObject(baselineImage, referenceImage, param)
+        deltaPhase = self.generateSusceptibilityMap(labelImage, param)
+        self.phaseDiff = self.phaseDiff - deltaPhase
+
       print("(alpha, gamma, B0, TE, TE) = (%f, %f, %f, %f, %f)" % (alpha, gamma, B0, TE, BT))
       imageTemp = self.phaseDiff / (alpha * 2.0 * numpy.pi * gamma * B0 * TE) + BT
         
@@ -755,6 +907,83 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
     logging.info('Processing completed')
 
     return True
+
+
+  def generateSusceptibilityMap(self, label, param):
+
+    gammaPI = param['gamma'] * 2.0 * np.pi
+    H0    = param['H0']
+    TE    = param['TE']
+    deltaChi = param['deltaChi']
+    alpha = param['alpha']
+    B0    = param['B0']
+    BT    = param['BT']
+
+    array_label = sitk.GetArrayFromImage(label)
+    shape_org = array_label.shape
+    mask = 1.0 - array_label
+
+    N = array_label.shape[0]
+    r = np.pi*(N-1)/N
+    zs = np.linspace(-r, r, N)
+    N = array_label.shape[1]
+    r = np.pi*(N-1)/N
+    ys = np.linspace(-r, r, N)
+    N = array_label.shape[2]
+    r = np.pi*(N-1)/N
+    xs = np.linspace(-r, r, N)
+    k_grid = np.meshgrid(zs, ys, xs, indexing='ij')
+
+    k_label = (1./3. - k_grid[B0_dir]**2 / (k_grid[0]**2 + k_grid[1]**2 + k_grid[2]**2)) * ft3d(array_label)
+    p_susc = gammaPI * H0 * TE * deltaChi * np.real(ift3d(k_label))
+
+    # Mask
+    p_susc = p_susc * mask
+
+    suscMap = sitk.GetImageFromArray(arrayPhaseDiff)
+    suscMap.SetOrigin(imageBaseline.GetOrigin())
+    suscMap.SetSpacing(imageBaseline.GetSpacing())
+    suscMap.SetDirection(imageBaseline.GetDirection())
+
+    return suscMap
+
+
+  def segmentObject(self, baselineImage, referenceImage, param):
+
+    # Subtraction
+    image_diff = baselineImage - referenceImage
+
+    # Threshold
+    otsu_filter = sitk.MaximumEntropyThresholdImageFilter()
+    otsu_filter.SetInsideValue(0)
+    otsu_filter.SetOutsideValue(1)
+    otsu_filter.SetNumberOfHistogramBins(5)
+    image_threshold = otsu_filter.Execute(image_diff)
+
+    # Relabel connected regions
+    cc_filter = sitk.ConnectedComponentImageFilter()
+    image_cc = cc_filter.Execute(image_threshold)
+    relabel_filter = sitk.RelabelComponentImageFilter()
+    relabel_filter.SetMinimumObjectSize(30)
+    image_relabel = relabel_filter.Execute(image_cc)
+
+    # Pick the largest region (regions are sorted by area)
+    image_obj = (image_relabel == 1)
+
+    # Smoothing
+    dilate_filter = sitk.BinaryDilateImageFilter()
+    dilate_filter.SetKernelRadius([1,1,1])
+    dilate_filter.SetForegroundValue(1.0)
+    dilate_filter.SetBackgroundValue(0.0)
+    image_obj = dilate_filter.Execute(image_obj)
+
+    erode_filter = sitk.BinaryErodeImageFilter()
+    erode_filter.SetKernelRadius([2,2,2])
+    erode_filter.SetForegroundValue(1.0)
+    erode_filter.SetBackgroundValue(0.0)
+    image_obj = erode_filter.Execute(image_obj)
+
+    return image_obj
 
   
   def runMultiFrame(self, param):
@@ -861,7 +1090,7 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
     imageUnwrapped.SetOrigin(imagePhase.GetOrigin())
     imageUnwrapped.SetSpacing(imagePhase.GetSpacing())
     imageUnwrapped.SetDirection(imagePhase.GetDirection())
-    
+
     return imageUnwrapped
     
 
