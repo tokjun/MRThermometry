@@ -6,6 +6,7 @@ import logging
 import SimpleITK as sitk
 import sitkUtils
 import numpy
+import scipy
 import math
 import copy
 from skimage.restoration import unwrap_phase
@@ -133,6 +134,7 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     scButtonGroup.addButton(self.scManualRadioButton)
     singleFrameFormLayout.addRow('Susc. Correction: ', scBoxLayout)
 
+
     #
     # Object label for susceptibility correction
     #
@@ -177,6 +179,22 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     self.objectReferenceImageSelector.setMRMLScene( slicer.mrmlScene )
     self.objectReferenceImageSelector.setToolTip( "Select a object reference magnitude image." )
     singleFrameFormLayout.addRow("Object Reference Image: ", self.objectReferenceImageSelector)
+
+    #
+    # Automatically-generated object label for susceptibility correction
+    #
+    self.autoObjectLabelSelector = slicer.qMRMLNodeComboBox()
+    self.autoObjectLabelSelector.nodeTypes = ( ("vtkMRMLLabelMapVolumeNode"), "" )
+    self.autoObjectLabelSelector.selectNodeUponCreation = True
+    self.autoObjectLabelSelector.addEnabled = True
+    self.autoObjectLabelSelector.removeEnabled = False
+    self.autoObjectLabelSelector.renameEnabled = True
+    self.autoObjectLabelSelector.noneEnabled = True
+    self.autoObjectLabelSelector.showHidden = False
+    self.autoObjectLabelSelector.showChildNodeTypes = False
+    self.autoObjectLabelSelector.setMRMLScene( slicer.mrmlScene )
+    self.autoObjectLabelSelector.setToolTip( "(Optional) Automatically-generated object label for suscptibility correction." )
+    singleFrameFormLayout.addRow("Output Object Label: ", self.autoObjectLabelSelector)
 
     #
     # tempMap volume selector
@@ -376,10 +394,10 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     #
     scB0AxisBoxLayout = qt.QHBoxLayout()
     scB0AxisButtonGroup = qt.QButtonGroup()
-    self.scB0Axis0RadioButton = qt.QRadioButton('0')
-    self.scB0Axis0RadioButton.checked = 1
-    self.scB0Axis1RadioButton = qt.QRadioButton('1')
-    self.scB0Axis2RadioButton = qt.QRadioButton('2')
+    self.scB0Axis0RadioButton = qt.QRadioButton('RL')
+    self.scB0Axis1RadioButton = qt.QRadioButton('AP')
+    self.scB0Axis2RadioButton = qt.QRadioButton('SI')
+    self.scB0Axis2RadioButton.checked = 1
 
     scB0AxisBoxLayout.addWidget(self.scB0Axis0RadioButton)
     scB0AxisBoxLayout.addWidget(self.scB0Axis1RadioButton)
@@ -530,6 +548,7 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
 
     # Refresh Apply button state
     self.onSelectSingle()
+    self.onScChange()
 
     self.tag = None
 
@@ -618,8 +637,17 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     param['suscCorrObjectLabelNode']  = self.objectLabelSelector.currentNode()
     param['suscCorrBaselineImageNode']= self.objectBaselineImageSelector.currentNode()
     param['suscCorrReferenceImageNode']= self.objectReferenceImageSelector.currentNode()
+    param['suscCorrAutoObjectLabelNode']  = self.autoObjectLabelSelector.currentNode()
     param['deltaChi']                 = self.deltaChiSpinBox.value
-    
+
+    # Set B0 direction. TODO: need to be verifed.
+    if self.scB0Axis0RadioButton.checked:
+      param['B0vec']                    = [1.0, 0.0, 0.0]
+    elif self.scB0Axis1RadioButton.checked:
+      param['B0vec']                    = [0.0, 1.0, 0.0]
+    else: # self.scB2Axis1RadioButton.checked:
+      param['B0vec']                    = [0.0, 0.0, 1.0]
+
     if self.useThresholdFlagCheckBox.checked == True:
       param['upperThreshold']         = self.upperThresholdSpinBox.value
       param['lowerThreshold']         = self.lowerThresholdSpinBox.value
@@ -633,7 +661,6 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     else:
       param['simpleMask']        = None
 
-      
     logic.runSingleFrame(param)
 
 
@@ -664,12 +691,14 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     param['BT']                       = self.BTSpinBox.value
     param['colorScaleMax']            = self.scaleRangeMaxSpinBox.value
     param['colorScaleMin']            = self.scaleRangeMinSpinBox.value
+    param['B0vec']                    = [0.0, 0.0, 1.0]  # TODO: Should depend on the patient orientation.
 
     # TODO: Susceptibility correction hasn't been implemented for multi-frame mapping.
     param['suscCorrMethod']            = suscCorrMethod
     param['suscCorrObjectLabelNode']   = None
     param['suscCorrBaselineImageNode'] = None
     param['suscCorrReferenceImageNode'] = None
+    param['suscCorrAutoObjectLabelNode']= None
 
     param['deltaChi']                 = self.deltaChiSpinBox.value
 
@@ -691,14 +720,17 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
       self.objectLabelSelector.enabled = 0
       self.objectBaselineImageSelector.enabled = 0
       self.objectReferenceImageSelector.enabled = 0
-    elif self.scManualRadioButton:
+      self.autoObjectLabelSelector.enabled = 0
+    elif self.scManualRadioButton.checked:
       self.objectLabelSelector.enabled = 1
       self.objectBaselineImageSelector.enabled = 0
       self.objectReferenceImageSelector.enabled = 0
+      self.autoObjectLabelSelector.enabled = 0
     else: # if self.scAutoRadioButton:
       self.objectLabelSelector.enabled = 0
       self.objectBaselineImageSelector.enabled = 1
       self.objectReferenceImageSelector.enabled = 1
+      self.autoObjectLabelSelector.enabled = 1
 
 
   def onReload(self, moduleName="PRFThermometry"):
@@ -767,6 +799,7 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
     B0                       = param['B0']
     TE                       = param['TE']
     BT                       = param['BT']
+    B0vec                    = param['B0vec']
     colorScaleMax            = param['colorScaleMax']
     colorScaleMin            = param['colorScaleMin']
     upperThreshold           = param['upperThreshold']
@@ -776,6 +809,7 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
     suscCorrObjectLabelNode   = param['suscCorrObjectLabelNode']
     suscCorrBaselineImageNode = param['suscCorrBaselineImageNode']
     suscCorrReferenceImageNode= param['suscCorrReferenceImageNode']
+    suscCorrAutoObjectLabelNode=param['suscCorrAutoObjectLabelNode']
     deltaChi                 = param['deltaChi']
 
 
@@ -890,6 +924,8 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
         baselineImage = sitk.Cast(sitkUtils.PullVolumeFromSlicer(suscCorrBaselineImageNode), sitk.sitkInt16)
         referenceImage = sitk.Cast(sitkUtils.PullVolumeFromSlicer(suscCorrReferenceImageNode), sitk.sitkInt16)
         labelImage = self.segmentObject(baselineImage, referenceImage, param)
+        if suscCorrAutoObjectLabelNode:
+          sitkUtils.PushVolumeToSlicer(labelImage, suscCorrAutoObjectLabelNode.GetName(), 0, True)
         deltaPhase = self.generateSusceptibilityMap(labelImage, param)
         self.phaseDiff = self.phaseDiff - deltaPhase
 
@@ -926,6 +962,14 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
     return True
 
 
+  def ft3d(self, array):
+    return scipy.fft.fftshift(scipy.fft.fftn(array))
+
+
+  def ift3d(self, array):
+    return scipy.fft.ifftn(scipy.fft.fftshift(array))
+
+
   def generateSusceptibilityMap(self, label, param):
 
     gammaPI = param['gamma'] * 2.0 * numpy.pi
@@ -935,7 +979,21 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
     alpha = param['alpha']
     B0    = param['B0']
     BT    = param['BT']
+    B0vec = param['B0vec']
     H0 = B0
+
+    # Find the image axis closest to the B0
+    # TODO: We need to find the orientation vector of the B0 field w.r.t. the image matrix frame (not the patient frame)
+    B0vec = numpy.array([B0vec])
+    d = numpy.array(label.GetDirection())
+    M = d.reshape(3,3)
+    M = M.transpose()
+    # Calculate the magnitudes of inner products (or cosines, assuming the vectors are normal)
+    ac = numpy.abs(numpy.inner(M,B0vec))
+
+    B0_dir = 2 - numpy.argmax(ac) # Needs to be flipped for numpy; (x,y,z) in NRRD becomes (z,y,x)
+
+    print('B0_dir = ' + str(B0_dir))
 
     array_label = sitk.GetArrayFromImage(label)
     shape_org = array_label.shape
@@ -952,16 +1010,16 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
     xs = numpy.linspace(-r, r, N)
     k_grid = numpy.meshgrid(zs, ys, xs, indexing='ij')
 
-    k_label = (1./3. - k_grid[B0_dir]**2 / (k_grid[0]**2 + k_grid[1]**2 + k_grid[2]**2)) * ft3d(array_label)
-    p_susc = gammaPI * H0 * TE * deltaChi * numpy.real(ift3d(k_label))
+    k_label = (1./3. - k_grid[B0_dir]**2 / (k_grid[0]**2 + k_grid[1]**2 + k_grid[2]**2)) * self.ft3d(array_label)
+    p_susc = gammaPI * H0 * TE * deltaChi * numpy.real(self.ift3d(k_label))
 
     # Mask
     p_susc = p_susc * mask
 
-    suscMap = sitk.GetImageFromArray(arrayPhaseDiff)
-    suscMap.SetOrigin(imageBaseline.GetOrigin())
-    suscMap.SetSpacing(imageBaseline.GetSpacing())
-    suscMap.SetDirection(imageBaseline.GetDirection())
+    suscMap = sitk.GetImageFromArray(p_susc)
+    suscMap.SetOrigin(label.GetOrigin())
+    suscMap.SetSpacing(label.GetSpacing())
+    suscMap.SetDirection(label.GetDirection())
 
     return suscMap
 
