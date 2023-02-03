@@ -116,7 +116,6 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     self.maskSelector.setToolTip( "Select a mask volume." )
     singleFrameFormLayout.addRow("Mask Volume: ", self.maskSelector)
 
-
     scBoxLayout = qt.QHBoxLayout()
     scButtonGroup = qt.QButtonGroup()
     self.scOffRadioButton = qt.QRadioButton('OFF')
@@ -125,7 +124,7 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     self.scManualRadioButton = qt.QRadioButton('Manual')
     self.scManualRadioButton.setToolTip( "Susceptibility correction using a object label map." )
     self.scAutoRadioButton = qt.QRadioButton('Auto')
-    self.scManualRadioButton.setToolTip( "Susceptibility correction using a object label map generated from magnitude images." )
+    self.scAutoRadioButton.setToolTip( "Susceptibility correction using a object label map generated from magnitude images." )
     scBoxLayout.addWidget(self.scOffRadioButton)
     scBoxLayout.addWidget(self.scManualRadioButton)
     scBoxLayout.addWidget(self.scAutoRadioButton)
@@ -372,6 +371,24 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
     self.deltaChiSpinBox.setToolTip("Delta Chi (Constant susceptibility difference in the object region)")
     scParametersFormLayout.addRow("Delta Chi (ppm): ", self.deltaChiSpinBox)
 
+    #
+    # B0 Direction
+    #
+    scB0AxisBoxLayout = qt.QHBoxLayout()
+    scB0AxisButtonGroup = qt.QButtonGroup()
+    self.scB0Axis0RadioButton = qt.QRadioButton('0')
+    self.scB0Axis0RadioButton.checked = 1
+    self.scB0Axis1RadioButton = qt.QRadioButton('1')
+    self.scB0Axis2RadioButton = qt.QRadioButton('2')
+
+    scB0AxisBoxLayout.addWidget(self.scB0Axis0RadioButton)
+    scB0AxisBoxLayout.addWidget(self.scB0Axis1RadioButton)
+    scB0AxisBoxLayout.addWidget(self.scB0Axis2RadioButton)
+    scB0AxisButtonGroup.addButton(self.scB0Axis0RadioButton)
+    scB0AxisButtonGroup.addButton(self.scB0Axis1RadioButton)
+    scB0AxisButtonGroup.addButton(self.scB0Axis2RadioButton)
+    scParametersFormLayout.addRow('B0 Direction: ', scB0AxisBoxLayout)
+
 
     # --------------------------------------------------
     # Parameters Area
@@ -574,11 +591,11 @@ class PRFThermometryWidget(ScriptedLoadableModuleWidget):
   def onApplyButtonSingle(self):
     logic = PRFThermometryLogic()
 
-    suscCorrMethod = 'Off'
+    suscCorrMethod = 'off'
     if self.scAutoRadioButton.checked:
-      suscCorrMethod = 'Auto'
+      suscCorrMethod = 'auto'
     elif self.scManualRadioButton.checked:
-      suscCorrMethod = 'Manual'
+      suscCorrMethod = 'manual'
 
     param = {}
     param['displayInterpolation']     = self.dispInterpFlagCheckBox.checked
@@ -911,31 +928,32 @@ class PRFThermometryLogic(ScriptedLoadableModuleLogic):
 
   def generateSusceptibilityMap(self, label, param):
 
-    gammaPI = param['gamma'] * 2.0 * np.pi
-    H0    = param['H0']
+    gammaPI = param['gamma'] * 2.0 * numpy.pi
+    #H0    = param['H0']
     TE    = param['TE']
     deltaChi = param['deltaChi']
     alpha = param['alpha']
     B0    = param['B0']
     BT    = param['BT']
+    H0 = B0
 
     array_label = sitk.GetArrayFromImage(label)
     shape_org = array_label.shape
     mask = 1.0 - array_label
 
     N = array_label.shape[0]
-    r = np.pi*(N-1)/N
-    zs = np.linspace(-r, r, N)
+    r = numpy.pi*(N-1)/N
+    zs = numpy.linspace(-r, r, N)
     N = array_label.shape[1]
-    r = np.pi*(N-1)/N
-    ys = np.linspace(-r, r, N)
+    r = numpy.pi*(N-1)/N
+    ys = numpy.linspace(-r, r, N)
     N = array_label.shape[2]
-    r = np.pi*(N-1)/N
-    xs = np.linspace(-r, r, N)
-    k_grid = np.meshgrid(zs, ys, xs, indexing='ij')
+    r = numpy.pi*(N-1)/N
+    xs = numpy.linspace(-r, r, N)
+    k_grid = numpy.meshgrid(zs, ys, xs, indexing='ij')
 
     k_label = (1./3. - k_grid[B0_dir]**2 / (k_grid[0]**2 + k_grid[1]**2 + k_grid[2]**2)) * ft3d(array_label)
-    p_susc = gammaPI * H0 * TE * deltaChi * np.real(ift3d(k_label))
+    p_susc = gammaPI * H0 * TE * deltaChi * numpy.real(ift3d(k_label))
 
     # Mask
     p_susc = p_susc * mask
